@@ -1,0 +1,2753 @@
+Phase 1 prompt — Prepare and audit real Paradigm data
+You are continuing the Paradigm Event Retrieval OpenCLIP project.
+
+Project path:
+
+C:\Users\Mohannad.Sherif\dev\model\open_clip\paradigm_event_retrieval
+
+OpenCLIP repository root:
+
+C:\Users\Mohannad.Sherif\dev\model\open_clip
+
+Verified environment:
+
+- Windows PowerShell
+- Python 3.12.10
+- NVIDIA GeForce RTX 4060 Ti
+- 8.00 GiB VRAM
+- PyTorch 2.11.0+cu128
+- torchvision 0.26.0+cu128
+- OpenCLIP 4.2.0.dev0
+- CUDA available
+- BF16 supported
+- baseline model ViT-B-32
+- baseline checkpoint laion2b_s34b_b79k
+- embedding dimension 512
+
+The synthetic smoke dataset, CUDA smoke retrieval, tests, and inference benchmark already work.
+
+Do not recreate those features.
+
+This phase must prepare and audit a real Paradigm event-photography pilot dataset.
+
+Do not start fine-tuning.
+Do not download another model.
+Do not modify the web application, database, OneDrive, APIs, OCR, YOLO, or frontend.
+Work only on dataset preparation for image-text retrieval.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Prepare a clean real dataset from Paradigm event photographs.
+
+Expected input structure:
+
+data\real_raw\
+├── event_001\
+│   ├── podiums\
+│   ├── backdrops\
+│   ├── stage_setups\
+│   ├── people\
+│   ├── signage\
+│   ├── logos\
+│   ├── gates\
+│   ├── registration_counters\
+│   ├── ballroom_layouts\
+│   ├── chairs_and_side_tables\
+│   ├── lighting_systems\
+│   ├── exhibition_booths\
+│   ├── mockups\
+│   └── giveaways\
+├── event_002\
+├── event_003\
+└── ...
+
+The first-level folder is an event ID.
+
+The second-level folder is a photographer-supplied weak category label.
+
+Folder labels may contain errors and must not be treated as perfect ground truth.
+
+==================================================
+1. REVIEW CURRENT DATASET CODE
+==================================================
+
+Inspect:
+
+- paradigm_clip/dataset.py
+- paradigm_clip/deduplication.py
+- paradigm_clip/caption_templates.py
+- scripts/prepare_dataset.py
+- configs/caption_templates.yaml
+- tests related to dataset preparation
+
+Report:
+
+- what already supports real data
+- what only supports smoke data
+- what must be extended
+- any assumptions about image resolution or size
+- any path handling problems
+- any unsafe duplicate removal behavior
+- any category normalization issues
+
+Do not rewrite working code unnecessarily.
+
+==================================================
+2. SUPPORTED REAL IMAGE FORMATS
+==================================================
+
+Support:
+
+- .jpg
+- .jpeg
+- .png
+- .webp
+- .tif
+- .tiff
+
+Optionally detect but report unsupported formats such as:
+
+- .heic
+- .heif
+- camera RAW files
+
+Do not silently ignore unsupported files.
+
+Create an unsupported-files report.
+
+==================================================
+3. IMAGE VALIDATION
+==================================================
+
+For every real image:
+
+- verify the file exists
+- verify it can be decoded
+- convert safely to RGB for validation
+- record width
+- record height
+- record aspect ratio
+- record file size in bytes
+- record file extension
+- record event ID
+- record source category
+- record normalized category
+- record relative path
+- record absolute path only in local reports
+- calculate SHA-256
+- calculate perceptual hash
+- detect empty or zero-byte files
+- detect extremely small images
+- detect unexpectedly huge image dimensions
+- detect truncated files
+- catch decompression-bomb warnings safely
+
+Do not modify original images.
+
+Do not resize or recompress originals.
+
+==================================================
+4. CATEGORY NORMALIZATION
+==================================================
+
+Create editable category alias configuration.
+
+Example:
+
+podium:
+- podium
+- podiums
+- lectern
+- lecterns
+
+backdrops:
+- backdrop
+- backdrops
+- stage_background
+- stage_backgrounds
+
+registration_counters:
+- registration_counter
+- registration_counters
+- registration_desk
+- check_in_counter
+- checkin_counter
+
+ballroom_layouts:
+- ballroom
+- ballrooms
+- ballroom_layout
+- ballroom_layouts
+- event_hall
+- event_halls
+
+exhibition_booths:
+- booth
+- booths
+- exhibition_booth
+- exhibition_booths
+- branded_booth
+
+giveaways:
+- giveaway
+- giveaways
+- gifts
+- promotional_gifts
+- promo_items
+
+Normalize spaces, hyphens, capitalization, and underscores.
+
+Unknown folders must be reported, not discarded.
+
+Create:
+
+configs/category_aliases.yaml
+
+==================================================
+5. EXACT DUPLICATES
+==================================================
+
+Detect exact duplicates using SHA-256.
+
+For each exact duplicate group, record:
+
+- group ID
+- all file paths
+- event IDs
+- categories
+- file sizes
+- suggested canonical file
+
+Do not delete duplicates automatically.
+
+Support a configuration option:
+
+exact_duplicate_policy:
+- include_all
+- keep_one_per_event
+- keep_one_global
+
+Default:
+
+include_all
+
+Any filtering must generate an audit trail.
+
+==================================================
+6. NEAR-DUPLICATES AND BURST PHOTOGRAPHY
+==================================================
+
+Use perceptual hashing or the existing near-duplicate logic.
+
+Create near-duplicate candidate groups.
+
+Record:
+
+- group ID
+- perceptual distance
+- event ID
+- category
+- paths
+- image dimensions
+
+Near-duplicate grouping should be restricted primarily within the same event.
+
+Do not treat every visually similar image across unrelated events as a duplicate.
+
+Create configurable thresholds.
+
+Do not automatically delete near duplicates.
+
+Add a configurable burst-control strategy:
+
+near_duplicate_policy:
+- include_all
+- limit_per_group
+- review_only
+
+Default:
+
+review_only
+
+Create a CSV suitable for manual review.
+
+==================================================
+7. EVENT-LEVEL SPLITTING
+==================================================
+
+Split by complete event.
+
+Never split images from one event across train, validation, and test.
+
+Default:
+
+- 70% of events training
+- 15% validation
+- 15% testing
+
+Requirements:
+
+- deterministic with seed
+- preserve at least two validation events and two test events when the number of events permits
+- report when the dataset is too small
+- validate zero leakage
+- calculate images and categories per split
+- calculate category coverage per split
+- warn when a category is missing from validation or testing
+
+Create:
+
+data\real_manifests\train.csv
+data\real_manifests\validation.csv
+data\real_manifests\test.csv
+data\real_manifests\all_images.csv
+
+==================================================
+8. MANIFEST SCHEMA
+==================================================
+
+Required columns:
+
+- image_id
+- filepath
+- relative_path
+- event_id
+- source_category
+- normalized_category
+- split
+- width
+- height
+- aspect_ratio
+- file_size_bytes
+- file_extension
+- sha256
+- perceptual_hash
+- exact_duplicate_group
+- near_duplicate_group
+- decode_status
+- review_status
+
+Caption fields may be added later, but do not create invented detailed captions from folder names in this phase.
+
+==================================================
+9. DATASET REPORT
+==================================================
+
+Generate:
+
+outputs\real_dataset_audit\dataset_report.json
+outputs\real_dataset_audit\dataset_report.md
+outputs\real_dataset_audit\category_counts.csv
+outputs\real_dataset_audit\event_counts.csv
+outputs\real_dataset_audit\exact_duplicates.csv
+outputs\real_dataset_audit\near_duplicates.csv
+outputs\real_dataset_audit\corrupted_files.csv
+outputs\real_dataset_audit\unsupported_files.csv
+outputs\real_dataset_audit\split_summary.csv
+outputs\real_dataset_audit\category_split_coverage.csv
+
+The report must include:
+
+- total discovered files
+- valid images
+- corrupted files
+- unsupported files
+- exact duplicate groups
+- near-duplicate groups
+- total events
+- images per event
+- images per category
+- category imbalance ratio
+- train/validation/test event counts
+- train/validation/test image counts
+- leakage result
+- missing-category warnings
+- largest files
+- largest image dimensions
+- smallest image dimensions
+- portrait/landscape/square counts
+
+==================================================
+10. PRIVACY AND GIT SAFETY
+==================================================
+
+Ensure:
+
+- real images are not committed to Git
+- generated manifests containing local paths are ignored when appropriate
+- private event names are not printed unnecessarily
+- no images are copied into tests
+- test fixtures remain synthetic
+
+Update .gitignore for:
+
+- data/real_raw/
+- private reports if appropriate
+- local embedding caches
+- model checkpoints
+
+Do not remove existing useful .gitignore entries.
+
+==================================================
+11. TESTS
+==================================================
+
+Add tests for:
+
+- category alias normalization
+- event-level leakage prevention
+- deterministic split
+- exact duplicate grouping
+- near-duplicate candidate grouping
+- unsupported extension reporting
+- corrupted image reporting
+- manifest columns
+- small dataset warnings
+- missing category coverage warnings
+- zero-byte file handling
+- portrait/landscape detection
+
+Use generated fixtures only.
+
+==================================================
+12. COMMAND
+==================================================
+
+Provide a tested PowerShell command similar to:
+
+python -m paradigm_event_retrieval.scripts.prepare_dataset `
+  --raw-dir paradigm_event_retrieval\data\real_raw `
+  --manifests-dir paradigm_event_retrieval\data\real_manifests `
+  --category-aliases paradigm_event_retrieval\configs\category_aliases.yaml `
+  --report-dir paradigm_event_retrieval\outputs\real_dataset_audit `
+  --seed 42
+
+Adjust the command to match the actual implementation.
+
+==================================================
+13. STOP CONDITIONS
+==================================================
+
+Stop after:
+
+- real dataset scanning code is ready
+- reports are generated if real data exists
+- manifests are generated if real data exists
+- tests pass
+- no event leakage exists
+- README is updated
+
+Do not start embedding generation.
+Do not evaluate the model.
+Do not start fine-tuning.
+Do not download a second model.
+
+==================================================
+14. FINAL REPORT
+==================================================
+
+Report:
+
+- real image count
+- event count
+- category count
+- corrupted count
+- unsupported count
+- duplicate groups
+- near-duplicate groups
+- split sizes
+- leakage result
+- category coverage problems
+- files changed
+- exact tested PowerShell command
+- blockers before baseline evaluation
+Phase 2 prompt — Build real baseline retrieval evaluation
+Continue the Paradigm Event Retrieval project.
+
+Use the existing project and completed real-data audit.
+
+Project:
+
+C:\Users\Mohannad.Sherif\dev\model\open_clip\paradigm_event_retrieval
+
+Environment:
+
+- RTX 4060 Ti
+- 8 GiB VRAM
+- CUDA available
+- BF16 supported
+- PyTorch 2.11.0+cu128
+- OpenCLIP 4.2.0.dev0
+
+Baseline:
+
+- ViT-B-32
+- laion2b_s34b_b79k
+- 512-dimensional embeddings
+
+This phase must evaluate the untouched pretrained model on real Paradigm photographs.
+
+Do not fine-tune.
+Do not download another model.
+Do not change model weights.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Create a reproducible real-world baseline for text-to-image retrieval.
+
+The baseline must answer:
+
+- how well the pretrained model retrieves Paradigm images
+- which categories work well
+- which category pairs are confused
+- which search types fail
+- what metrics must be improved by fine-tuning
+
+==================================================
+1. VERIFY PREREQUISITES
+==================================================
+
+Require:
+
+- data\real_manifests\test.csv
+- data\real_manifests\validation.csv
+- no event leakage
+- valid real images
+- baseline model availability
+- CUDA availability
+- enough free disk space
+- writable output directory
+
+Fail clearly when prerequisites are missing.
+
+Do not silently use smoke data.
+
+==================================================
+2. EVALUATION QUERY FORMAT
+==================================================
+
+Create or validate:
+
+data\evaluation\real_queries.json
+
+Schema:
+
+[
+  {
+    "query_id": "q001",
+    "query": "a black branded podium with golden stage lighting",
+    "relevant_images": [
+      "event_010/podiums/IMG_1001.jpg",
+      "event_010/podiums/IMG_1010.jpg"
+    ],
+    "relevance": {
+      "event_010/podiums/IMG_1001.jpg": 3,
+      "event_010/podiums/IMG_1010.jpg": 2
+    },
+    "target_category": "podiums",
+    "difficulty": "medium",
+    "query_type": "detailed_visual",
+    "notes": "Should not retrieve registration counters."
+  }
+]
+
+Support relevance grades:
+
+- 3 highly relevant
+- 2 relevant
+- 1 partially relevant
+- 0 irrelevant
+
+Validate:
+
+- unique query IDs
+- non-empty queries
+- referenced images exist
+- relevant images belong to the test split
+- no training image is used as final-test relevance
+- valid relevance values
+- valid difficulty values
+- valid query type values
+
+==================================================
+3. QUERY TYPES
+==================================================
+
+Support balanced query groups:
+
+- category-only
+- descriptive visual
+- composition/layout
+- color/lighting
+- object-plus-context
+- activity
+- difficult-confusion pair
+- broad semantic query
+
+Examples:
+
+Category-only:
+- podium
+- registration counter
+- event backdrop
+
+Descriptive:
+- transparent lectern in front of a blue LED screen
+
+Composition:
+- wide ballroom with round tables facing the stage
+
+Lighting:
+- purple-lit exhibition booth
+
+Difficult:
+- branded podium, not a registration counter
+
+Do not use exact client names, dates, photographers, or IDs unless they are intentionally visible in the photograph.
+
+==================================================
+4. QUERY LABELING GUIDE
+==================================================
+
+Create:
+
+docs\EVALUATION_LABELING_GUIDE.md
+
+Explain how Paradigm employees should judge results.
+
+Include:
+
+- relevance definitions
+- examples of grades 0–3
+- how many images to judge per query
+- how to handle near duplicates
+- how to handle partially visible objects
+- how to judge broad versus narrow queries
+- how to avoid labeling based only on folder names
+- how to judge category confusion
+
+Recommended pilot:
+
+- minimum 100 queries
+- preferred 200–300
+- at least 10 queries per important category
+- mix of easy, medium, difficult
+- use unseen test events
+
+==================================================
+5. IMAGE EMBEDDING CACHE
+==================================================
+
+Implement or validate a local embedding cache for evaluation.
+
+Use:
+
+- float32 normalized image embeddings
+- model metadata
+- image path mapping
+- checkpoint information
+- OpenCLIP version
+- preprocessing information
+- embedding dimension
+- file hash or manifest fingerprint
+
+Possible output:
+
+outputs\real_baseline\image_embeddings.npz
+outputs\real_baseline\image_metadata.json
+outputs\real_baseline\embedding_cache_metadata.json
+
+The cache must fail if:
+
+- model name changes
+- pretrained tag changes
+- checkpoint changes
+- embedding dimension changes
+- manifest changes
+- preprocessing changes
+
+Do not mix old and new model embeddings.
+
+==================================================
+6. REAL IMAGE EMBEDDING
+==================================================
+
+Use:
+
+- CUDA
+- model.eval()
+- torch.inference_mode()
+- official preprocessing
+- BF16 or FP16 based on the verified benchmark
+- float32 normalized output
+- safe batch processing
+- corrupted-file reporting
+- progress logging
+- resumable batches if practical
+
+Benchmark real-file batch sizes:
+
+- 8
+- 16
+- 32
+- 64
+
+Measure separately:
+
+- image decode
+- preprocessing
+- host-to-device transfer
+- model encoding
+- normalization
+- complete file-to-embedding time
+
+Do not reuse synthetic benchmark throughput as the real throughput result.
+
+==================================================
+7. TEXT EMBEDDING
+==================================================
+
+Generate query embeddings with the same model and checkpoint.
+
+Requirements:
+
+- same model instance where practical
+- official tokenizer
+- normalized float32 embeddings
+- non-empty validation
+- batched query encoding
+- deterministic output in eval mode
+
+==================================================
+8. RANKING
+==================================================
+
+Use cosine similarity between normalized embeddings.
+
+For each query, save:
+
+- top 100 results
+- rank
+- similarity score
+- image path
+- event ID
+- category
+- relevance grade
+- whether it is judged relevant
+- duplicate-group information
+
+Do not convert similarity into a percentage confidence.
+
+==================================================
+9. METRICS
+==================================================
+
+Calculate:
+
+- Precision@1
+- Precision@5
+- Precision@10
+- Recall@5
+- Recall@10
+- Recall@20
+- Recall@50
+- MRR
+- Average Precision
+- mAP
+- nDCG@5
+- nDCG@10
+- hit rate
+- median first-relevant rank
+
+Calculate metrics:
+
+- globally
+- by category
+- by difficulty
+- by query type
+- by event where useful
+
+==================================================
+10. FAILURE ANALYSIS
+==================================================
+
+Create automatic confusion summaries.
+
+Priority pairs:
+
+- podiums vs registration_counters
+- backdrops vs stage_setups
+- signage vs logos
+- sponsor walls vs backdrops
+- exhibition_booths vs gates
+- ballroom_layouts vs stage_setups
+- giveaways vs mockups
+- chairs_and_side_tables vs ballroom_layouts
+- lighting_systems vs illuminated stages
+- people vs group photos
+- registration_counters vs exhibition_booths
+
+For each failed query, record:
+
+- first relevant rank
+- dominant wrong categories in top 10
+- highest-similarity wrong result
+- whether near duplicates dominate
+- whether the query may be ambiguous
+- whether ground-truth labels may be incomplete
+
+Create:
+
+outputs\real_baseline\failure_analysis.json
+outputs\real_baseline\failure_analysis.md
+outputs\real_baseline\category_confusion.csv
+
+==================================================
+11. OUTPUTS
+==================================================
+
+Create:
+
+outputs\real_baseline\
+├── metrics.json
+├── metrics_by_category.csv
+├── metrics_by_difficulty.csv
+├── metrics_by_query_type.csv
+├── query_results.json
+├── top_results.csv
+├── failure_analysis.json
+├── failure_analysis.md
+├── category_confusion.csv
+├── timing.json
+├── image_embeddings.npz
+├── image_metadata.json
+├── model_metadata.json
+├── environment.json
+└── config.yaml
+
+==================================================
+12. VISUAL REVIEW PACKAGE
+==================================================
+
+Create an optional local HTML or contact-sheet review report.
+
+It may show:
+
+- query text
+- top 10 thumbnails
+- rank
+- similarity
+- ground-truth relevance
+- category
+
+Do not build a web application.
+
+Use a static local report only.
+
+Do not expose private images externally.
+
+==================================================
+13. TESTS
+==================================================
+
+Add tests for:
+
+- query schema validation
+- embedding cache compatibility
+- metric correctness
+- graded relevance
+- top-k ranking
+- cache invalidation
+- model mismatch
+- missing image reference
+- test-split enforcement
+- duplicate-aware result reporting
+
+==================================================
+14. STOP CONDITIONS
+==================================================
+
+Stop after the untouched baseline has been evaluated.
+
+Do not fine-tune.
+Do not perform prompt expansion yet.
+Do not download another model.
+
+==================================================
+15. FINAL REPORT
+==================================================
+
+Report:
+
+- number of test images
+- number of queries
+- baseline Precision@10
+- baseline Recall@50
+- baseline MRR
+- baseline mAP
+- baseline nDCG@10
+- real file-to-embedding throughput
+- average query latency
+- worst confusion pairs
+- strongest categories
+- weakest categories
+- files changed
+- exact tested commands
+- blockers before prompt optimization
+Phase 3 prompt — Optimize search prompts without training
+Continue the Paradigm Event Retrieval project.
+
+A real-data baseline using:
+
+- ViT-B-32
+- laion2b_s34b_b79k
+
+must already exist.
+
+Do not change model weights in this phase.
+
+The objective is to improve retrieval through domain-specific prompt engineering and prompt ensembles before fine-tuning.
+
+==================================================
+1. LOAD BASELINE RESULTS
+==================================================
+
+Require:
+
+- outputs\real_baseline\metrics.json
+- outputs\real_baseline\query_results.json
+- real query JSON
+- baseline image embedding cache
+- model metadata
+
+Fail if baseline evaluation is missing.
+
+==================================================
+2. DOMAIN CONCEPT LIBRARY
+==================================================
+
+Create:
+
+configs\paradigm_concepts.yaml
+
+For every important category, define:
+
+- canonical name
+- synonyms
+- category prompts
+- detailed prompts
+- context prompts
+- negative or confusion concepts
+
+Example:
+
+podiums:
+  synonyms:
+    - podium
+    - lectern
+    - speaker stand
+  prompts:
+    - a professional event photograph of a podium
+    - a branded lectern on a corporate conference stage
+    - a speaker standing behind a podium
+    - a close-up photograph of an event lectern
+  confusions:
+    - registration counter
+    - exhibition desk
+
+backdrops:
+  synonyms:
+    - backdrop
+    - stage background
+    - sponsor wall
+    - media wall
+  prompts:
+    - a branded backdrop behind an event stage
+    - a decorative conference stage background
+    - a sponsor wall with repeated logos
+  confusions:
+    - complete stage setup
+    - signage
+
+Create entries for all real categories.
+
+==================================================
+3. PROMPT STRATEGIES
+==================================================
+
+Implement and compare:
+
+A. Raw query
+
+Example:
+
+podium
+
+B. Template-wrapped query
+
+Example:
+
+a professional event photograph of a podium
+
+C. Synonym-expanded query
+
+Example:
+
+a professional event photograph of a podium or lectern
+
+D. Multi-prompt average
+
+Embed several prompts, average their normalized embeddings, then normalize again.
+
+E. Weighted multi-prompt average
+
+Allow configurable weights.
+
+F. Query plus domain context
+
+Example:
+
+a branded podium on a professional corporate event stage
+
+Do not use an LLM or internet API.
+
+Use controlled local templates.
+
+==================================================
+4. QUERY CLASSIFICATION
+==================================================
+
+Implement simple deterministic query handling.
+
+Recognize whether a query is:
+
+- category-only
+- detailed visual description
+- color/lighting query
+- layout query
+- activity query
+- multi-concept query
+
+Do not over-expand already detailed queries.
+
+Example:
+
+User query:
+transparent lectern in front of a blue LED screen
+
+Do not replace it with only:
+a podium
+
+Preserve original information.
+
+==================================================
+5. EVALUATION
+==================================================
+
+Run all prompt strategies against the same frozen image embeddings and same query relevance set.
+
+Compare:
+
+- raw query
+- template-wrapped
+- synonym-expanded
+- unweighted ensemble
+- weighted ensemble
+
+Metrics:
+
+- Precision@5
+- Precision@10
+- Recall@50
+- MRR
+- mAP
+- nDCG@10
+
+Also compare:
+
+- by category
+- by query type
+- by difficulty
+
+==================================================
+6. ABLATION
+==================================================
+
+Measure the effect of:
+
+- one prompt
+- two prompts
+- four prompts
+- eight prompts
+- synonyms enabled
+- domain prefix enabled
+- confusion-aware wording enabled
+
+Do not assume more prompts are always better.
+
+==================================================
+7. OUTPUTS
+==================================================
+
+Create:
+
+outputs\prompt_optimization\
+├── strategy_metrics.csv
+├── strategy_metrics.json
+├── per_query_comparison.csv
+├── category_comparison.csv
+├── best_strategy.yaml
+├── failures.json
+├── ablation_results.csv
+└── report.md
+
+==================================================
+8. ACCEPTANCE DECISION
+==================================================
+
+Recommend prompt optimization for production only when it improves the frozen evaluation set.
+
+Record:
+
+- absolute metric change
+- relative metric change
+- categories improved
+- categories damaged
+- latency change
+- text-embedding throughput change
+
+Do not claim success based on a few examples.
+
+==================================================
+9. STOP CONDITIONS
+==================================================
+
+Stop after selecting the best prompt strategy.
+
+Do not fine-tune.
+Do not download another model.
+
+==================================================
+10. FINAL REPORT
+==================================================
+
+Report:
+
+- best prompt strategy
+- baseline nDCG@10
+- optimized nDCG@10
+- baseline Precision@10
+- optimized Precision@10
+- categories improved
+- categories damaged
+- latency impact
+- exact configuration
+- files changed
+- recommendation whether fine-tuning is still necessary
+Phase 4 prompt — Compare one stronger OpenCLIP model
+Continue the Paradigm Event Retrieval project.
+
+The following must already exist:
+
+- real baseline metrics
+- prompt-optimized metrics
+- frozen real test query set
+- real image manifest
+- baseline model metadata
+
+This phase may download and evaluate exactly one stronger OpenCLIP model.
+
+Do not fine-tune any model.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Determine whether a stronger pretrained OpenCLIP checkpoint significantly improves Paradigm retrieval before custom fine-tuning.
+
+==================================================
+1. DISCOVER AVAILABLE MODELS
+==================================================
+
+Use:
+
+open_clip.list_pretrained()
+
+Do not invent model names or pretrained tags.
+
+Create a candidate table using only exact available pairs.
+
+Record:
+
+- model name
+- pretrained tag
+- input resolution
+- embedding dimension
+- parameter count if available
+- tokenizer type
+- model family
+- expected inference memory concern
+- compatibility with RTX 4060 Ti 8 GiB
+- whether batch size will need reduction
+
+==================================================
+2. SELECT EXACTLY ONE CANDIDATE
+==================================================
+
+Selection criteria:
+
+- materially stronger pretrained representation
+- likely to fit inference on 8 GiB
+- compatible with current OpenCLIP
+- useful for image-text retrieval
+- not an audio or caption-generation model
+- not selected only from ImageNet accuracy
+
+Print the selected candidate and rationale before downloading.
+
+Do not download more than one new checkpoint.
+
+==================================================
+3. BENCHMARK MODEL LOADING
+==================================================
+
+Test:
+
+- CUDA loading
+- FP16
+- BF16
+- batch sizes 1, 4, 8, 16, 32 as safe
+- peak GPU memory
+- model load time
+- image throughput
+- text throughput
+
+Catch OOM safely.
+
+==================================================
+4. GENERATE SEPARATE EMBEDDINGS
+==================================================
+
+Create a new embedding cache.
+
+Never overwrite or reuse ViT-B-32 embeddings.
+
+Store model-specific metadata.
+
+Example output:
+
+outputs\candidate_model\<safe_model_name>\
+
+==================================================
+5. EVALUATE SAME FROZEN QUERIES
+==================================================
+
+Use exactly the same:
+
+- test images
+- relevance judgments
+- metrics
+- prompt strategies
+
+Compare:
+
+- candidate raw query
+- candidate best prompt ensemble
+- ViT-B-32 raw baseline
+- ViT-B-32 optimized prompts
+
+==================================================
+6. COMPARISON METRICS
+==================================================
+
+Compare:
+
+- Precision@10
+- Recall@50
+- MRR
+- mAP
+- nDCG@10
+- image throughput
+- query latency
+- peak GPU memory
+- embedding dimension
+- cache size
+
+==================================================
+7. DECISION SCORECARD
+==================================================
+
+Create:
+
+outputs\model_comparison\comparison.csv
+outputs\model_comparison\comparison.json
+outputs\model_comparison\report.md
+
+Include:
+
+- metric improvements
+- performance cost
+- VRAM cost
+- strongest categories
+- weakest categories
+- confusing pairs
+- whether candidate is practical for fine-tuning on 8 GiB
+
+==================================================
+8. DECISION RULE
+==================================================
+
+Recommend the candidate only if:
+
+- retrieval improvement is meaningful
+- improvement occurs across multiple categories
+- performance is operationally acceptable
+- it does not create severe regressions
+- memory use is stable
+
+Do not automatically choose the larger model.
+
+==================================================
+9. STOP CONDITIONS
+==================================================
+
+Stop after comparing one candidate.
+
+Do not fine-tune.
+Do not download a third model.
+
+==================================================
+10. FINAL REPORT
+==================================================
+
+Report:
+
+- exact candidate name
+- exact pretrained tag
+- baseline metrics
+- candidate metrics
+- metric differences
+- throughput differences
+- GPU memory differences
+- selected base model for fine-tuning
+- reason
+Phase 5 prompt — Build reviewed training captions
+Continue the Paradigm Event Retrieval project.
+
+A base model for future fine-tuning has been selected after real evaluation.
+
+This phase must create a reviewed image-caption training dataset.
+
+Do not train yet.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Create high-quality text descriptions that reflect how Paradigm employees search for images.
+
+Folder names are weak labels and must not be used as the only captions.
+
+==================================================
+1. INPUTS
+==================================================
+
+Require:
+
+- real train manifest
+- real validation manifest
+- selected base model metadata
+- category alias configuration
+- prompt optimization report
+- dataset audit report
+
+==================================================
+2. CAPTION TYPES
+==================================================
+
+Every training image should have candidate captions in three groups:
+
+A. Category caption
+
+Example:
+
+a professional event photograph of a podium
+
+B. Detailed visual caption
+
+Example:
+
+a black branded lectern positioned in front of a blue LED screen
+
+C. Search-style caption
+
+Example:
+
+modern podium with blue stage lighting
+
+Optional fourth group:
+
+D. Composition/context caption
+
+Example:
+
+a wide stage view showing a podium between two large screens
+
+==================================================
+3. CONTROLLED TEMPLATE GENERATION
+==================================================
+
+Use editable YAML templates based on category.
+
+Do not use an external captioning API.
+
+Do not claim image-specific detail unless manually verified.
+
+For automatically generated initial captions, include only information supported by:
+
+- reviewed category
+- verified folder metadata
+- optional manually entered visual attributes
+
+Do not invent colors, people, branding, lighting, or materials.
+
+==================================================
+4. MANUAL REVIEW WORKFLOW
+==================================================
+
+Create review files:
+
+data\caption_review\captions_to_review.csv
+data\caption_review\captions_approved.csv
+data\caption_review\captions_rejected.csv
+
+Columns:
+
+- image_id
+- filepath
+- event_id
+- category
+- candidate_caption
+- caption_type
+- approval_status
+- reviewer
+- review_notes
+- visible_attributes
+- ambiguity_flag
+
+Create a simple local static review utility if useful.
+
+Do not build a web application.
+
+==================================================
+5. CAPTION QUALITY RULES
+==================================================
+
+Good captions must:
+
+- describe visible content
+- resemble realistic search queries
+- use event-domain language
+- distinguish confusing concepts
+- be grammatically clear
+- avoid irrelevant metadata
+- avoid exact client names unless visually important
+- avoid photographer names
+- avoid dates
+- avoid file IDs
+- avoid overly generic “event photo”
+
+Bad:
+
+Vodafone event image IMG_1001
+
+Good:
+
+a branded podium positioned on a professional conference stage
+
+==================================================
+6. MULTIPLE CAPTIONS PER IMAGE
+==================================================
+
+Store multiple approved candidate captions per image.
+
+During standard contrastive training:
+
+- sample one approved caption per image per epoch
+- do not place the same image multiple times in one batch with different captions unless multi-positive loss is implemented
+
+Document this behavior clearly.
+
+==================================================
+7. VALIDATION CAPTIONS
+==================================================
+
+Validation captions must be reviewed separately.
+
+Do not copy near-identical captions from train images when avoidable.
+
+Use diverse language.
+
+==================================================
+8. BALANCE
+==================================================
+
+Report:
+
+- approved captions per category
+- images without captions
+- images with only generic captions
+- caption-type distribution
+- caption length distribution
+- duplicate-caption frequency
+- category imbalance
+
+Warn when an important category has insufficient captions.
+
+==================================================
+9. OUTPUT MANIFESTS
+==================================================
+
+Create:
+
+data\training_manifests\train_captions.csv
+data\training_manifests\validation_captions.csv
+
+Required columns:
+
+- filepath
+- image_id
+- event_id
+- category
+- caption
+- caption_type
+- split
+- review_status
+
+Only approved captions may enter the final training manifests.
+
+==================================================
+10. TESTS
+==================================================
+
+Add tests for:
+
+- empty caption rejection
+- unapproved caption exclusion
+- duplicate caption handling
+- caption-type validation
+- one-caption-per-image sampling
+- deterministic caption sampling by seed
+- no validation/train event leakage
+- invalid metadata rejection
+
+==================================================
+11. STOP CONDITIONS
+==================================================
+
+Stop when:
+
+- reviewed training manifests exist
+- caption quality report exists
+- tests pass
+- no training starts
+
+==================================================
+12. FINAL REPORT
+==================================================
+
+Report:
+
+- images with approved captions
+- total approved captions
+- average captions per image
+- captions by category
+- missing categories
+- ambiguous images
+- files changed
+- blockers before hard-negative mining
+Phase 6 prompt — Mine and review hard negatives
+Continue the Paradigm Event Retrieval project.
+
+Required inputs:
+
+- selected base model
+- real train image manifest
+- approved training captions
+- real baseline embeddings or newly generated train embeddings
+- category confusion map
+
+Do not train yet.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Find difficult incorrect images that the baseline model ranks too highly.
+
+These hard negatives will help the customized model separate confusing Paradigm concepts.
+
+==================================================
+1. CONFUSION MAP
+==================================================
+
+Create or update:
+
+configs\category_confusions.yaml
+
+Include:
+
+podiums:
+- registration_counters
+- exhibition_booths
+
+backdrops:
+- stage_setups
+- signage
+- logos
+
+registration_counters:
+- podiums
+- exhibition_booths
+
+ballroom_layouts:
+- stage_setups
+- chairs_and_side_tables
+
+giveaways:
+- mockups
+- table_decorations if present
+
+lighting_systems:
+- stage_setups
+
+exhibition_booths:
+- gates
+- registration_counters
+
+==================================================
+2. MINING PROCESS
+==================================================
+
+For each approved caption:
+
+1. Embed the caption.
+2. Retrieve nearest training images.
+3. Remove the positive image.
+4. Remove known duplicate-group members.
+5. Remove other approved positives when known.
+6. Select high-similarity images from confusing categories.
+7. Save them as candidates.
+
+Do not automatically label every nearest non-positive as a true negative.
+
+Ground truth may be incomplete.
+
+==================================================
+3. CANDIDATE SCHEMA
+==================================================
+
+Create:
+
+data\hard_negatives\candidates.jsonl
+
+Each record:
+
+{
+  "caption_id": "cap_001",
+  "query": "a branded podium on a conference stage",
+  "positive_image": "event_001/podiums/IMG_001.jpg",
+  "candidate_image": "event_005/registration_counters/IMG_800.jpg",
+  "candidate_category": "registration_counters",
+  "similarity": 0.42,
+  "confusion_pair": "podiums_vs_registration_counters",
+  "review_status": "pending",
+  "reviewer": null,
+  "notes": null
+}
+
+==================================================
+4. MANUAL REVIEW
+==================================================
+
+Create:
+
+- candidates_pending.csv
+- candidates_approved.csv
+- candidates_rejected.csv
+
+Review labels:
+
+- true_hard_negative
+- possible_positive
+- irrelevant_easy_negative
+- ambiguous
+- duplicate
+- wrong_folder_label
+
+Only `true_hard_negative` may be used in training.
+
+==================================================
+5. MINING CONTROLS
+==================================================
+
+Configurable:
+
+- top_k
+- maximum candidates per caption
+- minimum similarity
+- category restriction
+- duplicate filtering
+- event restriction
+- global maximum candidates
+
+Avoid one image becoming a negative for thousands of captions.
+
+==================================================
+6. ANALYSIS
+==================================================
+
+Report:
+
+- candidates per confusion pair
+- approved hard negatives
+- ambiguous candidates
+- possible positives discovered
+- wrong folder labels discovered
+- similarity distribution
+- repeated negative frequency
+
+==================================================
+7. TRAINING FORMAT
+==================================================
+
+Prepare a training-compatible hard-negative manifest, but do not modify OpenCLIP loss yet.
+
+Create:
+
+data\training_manifests\hard_negatives.csv
+
+Columns:
+
+- query
+- positive_filepath
+- negative_filepath
+- confusion_pair
+- review_status
+- similarity
+- event_id_positive
+- event_id_negative
+
+==================================================
+8. STOP CONDITIONS
+==================================================
+
+Do not start training.
+
+Stop after reviewed hard negatives are available.
+
+==================================================
+9. FINAL REPORT
+==================================================
+
+Report:
+
+- mined candidates
+- approved hard negatives
+- rejected candidates
+- ambiguous candidates
+- main confusion pairs
+- discovered labeling problems
+- whether custom hard-negative loss is recommended
+Phase 7 prompt — Stage A partial fine-tuning
+Continue the Paradigm Event Retrieval project.
+
+This phase may start the first controlled fine-tuning experiment.
+
+Verified hardware:
+
+- NVIDIA GeForce RTX 4060 Ti
+- 8 GiB VRAM
+- BF16 supported
+- PyTorch 2.11.0+cu128
+- OpenCLIP 4.2.0.dev0
+
+Required completed artifacts:
+
+- clean real train manifest
+- clean real validation manifest
+- zero event leakage
+- approved caption manifests
+- baseline real metrics
+- prompt optimization metrics
+- selected base model
+- selected model metadata
+- evaluation query set
+- dataset audit report
+- optional reviewed hard negatives
+
+Do not run Stage A unless every preflight requirement passes.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Adapt the final layers of the pretrained image-text model to Paradigm event photography while preserving general visual-language knowledge.
+
+Do not train from scratch.
+
+Do not fully unfreeze the model.
+
+==================================================
+1. PREFLIGHT
+==================================================
+
+Validate:
+
+- CUDA available
+- correct GPU detected
+- sufficient free VRAM
+- selected model/checkpoint exists
+- model loads
+- train manifest exists
+- validation manifest exists
+- captions are approved
+- no event leakage
+- no empty captions
+- no missing files
+- baseline metrics exist
+- evaluation query file exists
+- output directory writable
+- OpenCLIP training CLI works
+- selected locking flags are supported by the actual model
+- task/loss dispatch is correct for the model family
+- resume checkpoint is absent or compatible
+
+Print a preflight report.
+
+Require explicit confirmation flag:
+
+--confirm-training
+
+Without it, only run preflight and exit.
+
+==================================================
+2. TRAINING APPROACH
+==================================================
+
+Use pretrained weights.
+
+Freeze most of:
+
+- image tower
+- text tower
+
+Unlock only the final supported groups/layers.
+
+Do not hard-code unsupported layer structures.
+
+Inspect the selected model.
+
+Initial Stage A candidates:
+
+- final 1 image group and final 1 text layer
+- final 2 image groups and final 2 text layers
+
+Use only one conservative default for the first run.
+
+==================================================
+3. HYPERPARAMETERS
+==================================================
+
+Recommended first experiment:
+
+- epochs: 3
+- learning rate: 5e-6
+- weight decay: 0.05
+- warmup: approximately 5% of total steps
+- BF16 AMP
+- gradient checkpointing
+- physical batch size: start 8
+- accumulation frequency: start 8
+- effective batch size: 64
+- validation every epoch
+- save every epoch
+- early stopping patience: 2
+
+If physical batch 8 causes OOM:
+
+- reduce to 4
+- increase accumulation to preserve effective batch
+
+Do not automatically raise batch size based on inference memory.
+
+Training memory is much larger than inference memory.
+
+==================================================
+4. LOSS
+==================================================
+
+Use the OpenCLIP task/loss appropriate to the selected base model.
+
+Do not force:
+
+- SigLIP loss on CLIP model
+- CLIP loss on SigLIP model
+
+For the first Stage A run:
+
+- use the standard repository-supported contrastive loss
+- do not add custom hard-negative loss unless it has already been tested independently
+
+==================================================
+5. DATA SAMPLING
+==================================================
+
+Use one approved caption per image per epoch.
+
+Support:
+
+- deterministic seed
+- category-balanced sampling where feasible
+- event diversity
+- reduced dominance of large categories
+- configurable upsampling of small important categories
+
+Do not place duplicate versions of the same image in one batch.
+
+Avoid near-duplicate burst domination.
+
+==================================================
+6. AUGMENTATION
+==================================================
+
+Use conservative augmentations.
+
+Allowed:
+
+- mild crop
+- mild brightness
+- mild contrast
+- mild color jitter
+- occasional horizontal flip
+- small perspective adjustment
+
+Avoid:
+
+- aggressive crop
+- heavy blur
+- large rotation
+- CutMix
+- MixUp
+- transformations that remove the main stage, podium, backdrop, or booth
+
+Evaluation must use official validation preprocessing.
+
+==================================================
+7. LOGGING
+==================================================
+
+Log:
+
+- epoch
+- step
+- training loss
+- validation loss
+- learning rate
+- gradient norm
+- logit scale when relevant
+- images per second
+- batch latency
+- allocated memory
+- reserved memory
+- peak memory
+- skipped batches
+- failed images
+- Precision@10
+- Recall@50
+- MRR
+- nDCG@10
+
+Use:
+
+- TensorBoard
+- JSONL
+
+Weights & Biases must remain optional.
+
+==================================================
+8. CHECKPOINTS
+==================================================
+
+Save:
+
+- every epoch
+- best checkpoint by validation nDCG@10
+- latest checkpoint
+- optimizer state
+- scheduler state
+- scaler state when used
+- model metadata
+- environment metadata
+- training config
+
+Create:
+
+outputs\training\stage_a\<run_name>\
+
+==================================================
+9. EARLY STOPPING
+==================================================
+
+Stop when:
+
+- validation nDCG@10 does not improve for two evaluations
+- NaN or infinite loss appears repeatedly
+- retrieval metrics collapse
+- GPU instability occurs
+- event leakage is detected
+- checkpoint metadata becomes inconsistent
+
+==================================================
+10. POST-TRAINING EVALUATION
+==================================================
+
+Evaluate the best checkpoint on:
+
+- validation query set
+- not the final test set during tuning
+
+Compare against:
+
+- original pretrained baseline
+- prompt-optimized pretrained baseline
+
+Metrics:
+
+- Precision@10
+- Recall@50
+- MRR
+- mAP
+- nDCG@10
+
+==================================================
+11. OUTPUTS
+==================================================
+
+Create:
+
+outputs\training\stage_a\<run_name>\
+├── checkpoints\
+├── best_checkpoint.pt
+├── latest_checkpoint.pt
+├── train_log.jsonl
+├── metrics.json
+├── validation_results.json
+├── config.yaml
+├── environment.json
+├── model_metadata.json
+├── memory_report.json
+└── report.md
+
+==================================================
+12. ACCEPTANCE
+==================================================
+
+Stage A is considered promising when:
+
+- validation nDCG@10 improves
+- Precision@10 improves
+- difficult category pairs improve
+- general queries do not collapse
+- model remains numerically stable
+
+Do not call the model production-ready.
+
+==================================================
+13. FINAL REPORT
+==================================================
+
+Report:
+
+- run name
+- base model
+- pretrained tag
+- unlocked groups/layers
+- batch size
+- accumulation
+- effective batch
+- epochs completed
+- best epoch
+- learning rate
+- peak VRAM
+- training time
+- baseline metrics
+- Stage A metrics
+- category improvements
+- regressions
+- checkpoint path
+- recommendation for another Stage A run or Stage B
+Phase 8 prompt — Stage A ablation and model selection
+Continue the Paradigm Event Retrieval project.
+
+At least one Stage A training run exists.
+
+Do not run Stage B yet.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Determine which Stage A configuration produces genuine retrieval improvement rather than random variation or overfitting.
+
+==================================================
+1. COMPARE RUNS
+==================================================
+
+Compare up to three controlled Stage A runs.
+
+Change only one major factor at a time.
+
+Possible ablations:
+
+- learning rate 5e-6 vs 1e-5
+- unlock 1 group vs 2 groups
+- weight decay 0.01 vs 0.05
+- category-balanced sampling enabled vs disabled
+- conservative augmentation variants
+
+Do not launch a large hyperparameter sweep.
+
+==================================================
+2. FIXED VALIDATION
+==================================================
+
+Use the exact same:
+
+- validation images
+- validation queries
+- relevance judgments
+- metrics
+- prompt strategy
+
+==================================================
+3. ANALYZE
+==================================================
+
+Compare:
+
+- Precision@10
+- Recall@50
+- MRR
+- mAP
+- nDCG@10
+- loss curve
+- metric curve
+- training stability
+- peak memory
+- total training time
+- category regressions
+- confusion-pair improvement
+
+==================================================
+4. OVERFITTING CHECK
+==================================================
+
+Detect:
+
+- training loss improves while validation falls
+- category labels improve but detailed queries worsen
+- seen-event appearance is memorized
+- broad semantic search degrades
+- text tower becomes overly specialized
+
+==================================================
+5. SELECT BEST STAGE A
+==================================================
+
+Create:
+
+outputs\training\stage_a_comparison\
+├── comparison.csv
+├── comparison.json
+├── category_comparison.csv
+├── confusion_comparison.csv
+├── selected_checkpoint.json
+└── report.md
+
+==================================================
+6. DECISION
+==================================================
+
+Choose:
+
+- best Stage A checkpoint
+- whether Stage B is justified
+- whether another Stage A configuration is required
+- whether the pretrained model with prompt optimization remains better
+
+==================================================
+7. STOP CONDITIONS
+==================================================
+
+Do not run Stage B automatically.
+
+==================================================
+8. FINAL REPORT
+==================================================
+
+Report:
+
+- runs compared
+- best run
+- best checkpoint
+- metric improvements
+- regressions
+- evidence of overfitting
+- Stage B recommendation
+Phase 9 prompt — Stage B refinement
+Continue the Paradigm Event Retrieval project.
+
+A best Stage A checkpoint has been selected.
+
+Stage B may run only when Stage A provides verified validation improvement.
+
+Hardware:
+
+- RTX 4060 Ti
+- 8 GiB VRAM
+
+Do not perform full-model fine-tuning.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Refine the best Stage A checkpoint with a lower learning rate and slightly more trainable final layers.
+
+==================================================
+1. PREFLIGHT
+==================================================
+
+Require:
+
+- selected Stage A checkpoint
+- compatible metadata
+- improved Stage A validation metrics
+- no event leakage
+- Stage A training report
+- valid train and validation manifests
+- CUDA available
+
+==================================================
+2. CONFIGURATION
+==================================================
+
+Suggested:
+
+- learning rate: 1e-6 to 3e-6
+- epochs: 2–3
+- BF16
+- physical batch: 4–8
+- accumulation: enough for effective batch 32–64
+- gradient checkpointing
+- unlock slightly more final groups/layers
+- validation every epoch
+- early stopping patience 1–2
+
+Do not unlock the full model.
+
+==================================================
+3. HARD NEGATIVES
+==================================================
+
+If reviewed hard negatives exist, optionally enable them through a tested configuration.
+
+The standard contrastive loss must remain active.
+
+Any hard-negative loss weight must be small and configurable.
+
+Start with:
+
+- 0.05
+- 0.10
+- 0.20
+
+Do not enable custom loss without tests.
+
+==================================================
+4. PRESERVATION
+==================================================
+
+Optionally add a small preservation/distillation term using a frozen original model only if it is already correctly implemented and tested.
+
+Do not add this complexity by default.
+
+==================================================
+5. EVALUATION
+==================================================
+
+Compare Stage B against:
+
+- original pretrained
+- pretrained plus prompt optimization
+- best Stage A
+
+Use validation data during development.
+
+Do not inspect final test metrics repeatedly.
+
+==================================================
+6. ACCEPTANCE
+==================================================
+
+Stage B must:
+
+- improve or preserve nDCG@10
+- improve difficult confusion pairs
+- avoid broad-query regression
+- remain stable
+- not excessively increase latency
+
+==================================================
+7. OUTPUT
+==================================================
+
+Create:
+
+outputs\training\stage_b\<run_name>\
+
+Include all checkpoint, config, metric, environment, and comparison files.
+
+==================================================
+8. STOP
+==================================================
+
+Stop after selecting the best Stage B checkpoint.
+
+Do not export as final yet.
+
+==================================================
+9. FINAL REPORT
+==================================================
+
+Report:
+
+- Stage A source checkpoint
+- unlocked layers/groups
+- learning rate
+- epochs
+- hard-negative configuration
+- peak VRAM
+- Stage A metrics
+- Stage B metrics
+- improvements
+- regressions
+- selected checkpoint
+Phase 10 prompt — Final frozen test evaluation
+Continue the Paradigm Event Retrieval project.
+
+The best candidate checkpoint has been selected from:
+
+- pretrained baseline
+- prompt-optimized pretrained model
+- Stage A
+- Stage B
+
+This phase must perform the final evaluation on the untouched test set.
+
+Do not train or tune during this phase.
+
+==================================================
+1. FREEZE CONFIGURATION
+==================================================
+
+Record:
+
+- model checkpoint
+- preprocessing
+- tokenizer
+- query strategy
+- precision
+- batch size
+- embedding dimension
+- OpenCLIP version
+- Git commit
+- PyTorch version
+
+No parameter may be changed after final test evaluation begins.
+
+==================================================
+2. TEST SET
+==================================================
+
+Validate:
+
+- test events were never used for training
+- test queries were not used for tuning
+- relevance judgments are complete enough
+- no event leakage exists
+- no embedding cache mismatch exists
+
+==================================================
+3. EVALUATE
+==================================================
+
+Calculate:
+
+- Precision@1
+- Precision@5
+- Precision@10
+- Recall@10
+- Recall@20
+- Recall@50
+- MRR
+- mAP
+- nDCG@5
+- nDCG@10
+- median first-relevant rank
+
+Break down by:
+
+- category
+- difficulty
+- query type
+- confusion pair
+
+==================================================
+4. STATISTICAL COMPARISON
+==================================================
+
+Compare final candidate against baseline per query.
+
+Use bootstrap confidence intervals when feasible.
+
+Report:
+
+- mean difference
+- median difference
+- percentage of queries improved
+- percentage unchanged
+- percentage worsened
+
+Do not claim significance without calculation.
+
+==================================================
+5. HUMAN REVIEW
+==================================================
+
+Create a static review package for:
+
+- best improvements
+- worst regressions
+- common remaining failures
+- ambiguous ground truth
+- near-duplicate domination
+
+==================================================
+6. ACCEPTANCE CRITERIA
+==================================================
+
+Recommended target:
+
+- meaningful nDCG@10 improvement
+- meaningful Precision@10 improvement
+- improved difficult pairs
+- no severe broad-query regression
+- stable inference
+- acceptable memory and latency
+
+==================================================
+7. OUTPUTS
+==================================================
+
+Create:
+
+outputs\final_evaluation\
+├── metrics.json
+├── metrics_by_category.csv
+├── metrics_by_query_type.csv
+├── metrics_by_difficulty.csv
+├── per_query_comparison.csv
+├── confidence_intervals.json
+├── failure_analysis.md
+├── query_results.json
+├── static_review\
+└── final_report.md
+
+==================================================
+8. FINAL DECISION
+==================================================
+
+Select one:
+
+- customized model accepted
+- pretrained model with prompt optimization accepted
+- more data required
+- more caption review required
+- fine-tuning rejected because it did not improve retrieval
+
+Be honest.
+
+==================================================
+9. FINAL REPORT
+==================================================
+
+Report all final metrics, baseline differences, remaining failure modes, and deployment recommendation.
+Phase 11 prompt — Export the final model package
+Continue the Paradigm Event Retrieval project.
+
+A final model or final pretrained-plus-prompt configuration has been accepted after frozen test evaluation.
+
+This phase must create a reproducible export package.
+
+Do not retrain.
+
+==================================================
+1. EXPORT CONTENT
+==================================================
+
+Create:
+
+outputs\paradigm-event-openclip-v1\
+├── checkpoint.pt
+├── config.json
+├── model_metadata.json
+├── preprocessing.json
+├── tokenizer.json
+├── prompt_strategy.yaml
+├── metrics.json
+├── metrics_by_category.csv
+├── environment.json
+├── requirements-tested.txt
+├── training_config.yaml
+├── dataset_summary.json
+├── evaluation_summary.json
+├── checksums.json
+└── MODEL_CARD.md
+
+If the final solution uses the original pretrained checkpoint without custom weights, do not duplicate restricted or unnecessary checkpoint files.
+
+Record how to load the original checkpoint exactly.
+
+==================================================
+2. CHECKPOINT VALIDATION
+==================================================
+
+Validate:
+
+- checkpoint loads
+- image embedding works
+- text embedding works
+- dimensions match
+- normalization works
+- CPU fallback works
+- CUDA works
+- BF16 works when supported
+- exported metadata matches runtime
+- tokenizer matches
+- preprocessing matches
+
+==================================================
+3. CHECKSUMS
+==================================================
+
+Generate SHA-256 checksums for exported artifacts.
+
+==================================================
+4. MODEL CARD
+==================================================
+
+Include:
+
+- model name
+- base model
+- pretrained source
+- intended use
+- non-intended use
+- Paradigm categories
+- training approach
+- event-level splitting
+- evaluation metrics
+- benchmark hardware
+- limitations
+- confusing categories
+- privacy notes
+- no identity recognition
+- no OCR
+- requirement to use same model for image and text embeddings
+- preprocessing requirements
+- tokenizer requirements
+- embedding dimension
+- precision guidance
+- known failure modes
+
+==================================================
+5. LOADING EXAMPLE
+==================================================
+
+Create a tested inference example that:
+
+- loads the exported model
+- embeds images
+- embeds text
+- retrieves top results
+- verifies metadata
+
+==================================================
+6. TESTS
+==================================================
+
+Add export round-trip tests.
+
+==================================================
+7. FINAL REPORT
+==================================================
+
+Report:
+
+- export path
+- checkpoint size
+- embedding dimension
+- loading command
+- tested devices
+- checksums
+- known limitations
+Phase 12 prompt — Real production inference performance
+Continue the Paradigm Event Retrieval project.
+
+A final model package exists.
+
+This phase must benchmark real-file inference performance using real Paradigm JPEG images.
+
+Do not train.
+
+==================================================
+1. DATA
+==================================================
+
+Use a representative sample:
+
+- at least 500 real images
+- mixed resolutions
+- portrait and landscape
+- multiple cameras
+- multiple events
+- include high-resolution images
+
+Do not modify originals.
+
+==================================================
+2. BENCHMARK PIPELINE
+==================================================
+
+Measure separately:
+
+- file read
+- JPEG decode
+- resize
+- normalization
+- CPU batching
+- host-to-device transfer
+- GPU encoding
+- embedding normalization
+- float32 conversion
+- total file-to-embedding time
+
+==================================================
+3. CONFIGURATIONS
+==================================================
+
+Test:
+
+- batch 8
+- batch 16
+- batch 32
+- batch 64 if stable
+
+Test:
+
+- FP16
+- BF16
+- FP32 as reference
+
+Use:
+
+- torch.inference_mode()
+- pinned memory
+- non_blocking transfer when valid
+- warm-up
+- CUDA synchronization
+- multiple runs
+
+==================================================
+4. METRICS
+==================================================
+
+Report:
+
+- images per second
+- milliseconds per image
+- total time for 1,000 images
+- preprocessing percentage
+- GPU encode percentage
+- peak VRAM
+- CPU RAM
+- failures
+- largest stable batch
+- throughput variance
+
+==================================================
+5. RETRIEVAL CONSISTENCY
+==================================================
+
+Compare FP16, BF16, FP32:
+
+- cosine similarity drift
+- top-10 ranking overlap
+- metric differences on evaluation queries
+
+Choose the fastest precision that preserves retrieval quality.
+
+==================================================
+6. OUTPUTS
+==================================================
+
+Create:
+
+outputs\production_benchmark\
+├── benchmark.json
+├── benchmark.csv
+├── ranking_consistency.json
+├── failures.csv
+└── report.md
+
+==================================================
+7. FINAL RECOMMENDATION
+==================================================
+
+Recommend:
+
+- production image precision
+- production text precision
+- batch size
+- expected throughput
+- expected time per 1,000 images
+- memory requirement
+Correct execution order
+Phase 1  → Real dataset audit
+Phase 2  → Real baseline evaluation
+Phase 3  → Prompt optimization
+Phase 4  → One stronger-model comparison
+Phase 5  → Caption dataset
+Phase 6  → Hard-negative mining
+Phase 7  → Stage A fine-tuning
+Phase 8  → Stage A comparison
+Phase 9  → Stage B refinement
+Phase 10 → Frozen final evaluation
+Phase 11 → Model export
+Phase 12 → Real production benchmark

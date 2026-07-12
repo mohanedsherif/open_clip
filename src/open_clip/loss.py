@@ -146,7 +146,7 @@ class CoCaLoss(ClipLoss):
             self,
             caption_loss_weight,
             clip_loss_weight,
-            pad_id=0,  # pad_token for open_clip custom tokenizer
+            pad_id=0,  # deprecated legacy convenience, see below; pass None with -100 masked labels
             local_loss=False,
             gather_with_grad=False,
             cache_labels=False,
@@ -163,19 +163,47 @@ class CoCaLoss(ClipLoss):
 
         self.clip_loss_weight = clip_loss_weight
         self.caption_loss_weight = caption_loss_weight
-        self.caption_loss = nn.CrossEntropyLoss(ignore_index=pad_id)
+        # Preferred contract (pad_id=None): labels arrive with invalid positions already masked to -100
+        # (built task-side from the batch text_valid mask; see CoCaTask). pad_id is the legacy value-based
+        # convenience: when set, label positions equal to pad_id are additionally ignored -- note this
+        # also drops genuine tokens sharing the pad value (e.g. SimpleTokenizer id 0). Default kept at 0
+        # for backward compat with external callers passing raw (unmasked) labels.
+        self.pad_id = pad_id
+        self.caption_loss = nn.CrossEntropyLoss(ignore_index=-100)
 
-    def forward(self, image_features, text_features, logits, labels, logit_scale, output_dict=False):
+    def forward(
+            self,
+            image_features,
+            text_features,
+            logits=None,
+            labels=None,
+            logit_scale=None,
+            output_dict=False,
+            caption_loss=None,
+    ):
+        """Two ways to supply the caption term:
+
+        * legacy: ``logits`` [B, L, V] + ``labels`` [B, L] -- CE computed here (materialized logits);
+        * fused: ``caption_loss`` scalar precomputed by the model via ``fused_linear_cross_entropy``
+          (see CoCa/MaMMUT ``forward(labels=...)``) -- only the loss weighting is applied here.
+
+        """
+        assert logit_scale is not None, 'logit_scale is required'
         if self.clip_loss_weight:
             clip_loss = super().forward(image_features, text_features, logit_scale)
             clip_loss = self.clip_loss_weight * clip_loss
         else:
-            clip_loss = torch.tensor(0, device=logits.device)
+            clip_loss = torch.tensor(0, device=image_features.device)
 
-        caption_loss = self.caption_loss(
-            logits.permute(0, 2, 1),
-            labels,
-        )
+        if caption_loss is None:
+            assert logits is not None and labels is not None, \
+                'CoCaLoss needs (logits, labels) when the model does not supply caption_loss'
+            if self.pad_id is not None:
+                labels = labels.masked_fill(labels == self.pad_id, -100)
+            caption_loss = self.caption_loss(
+                logits.permute(0, 2, 1),
+                labels,
+            )
         caption_loss = caption_loss * self.caption_loss_weight
 
         if output_dict:
@@ -501,7 +529,7 @@ def fused_linear_cross_entropy(
         target: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
         ignore_index: int = -100,
-        chunk_size: int = 1024,
+        chunk_size: int = 4096,
         reduction: str = "mean",
 ) -> torch.Tensor:
     """Memory-efficient linear projection + cross-entropy without materializing full logits.
@@ -512,6 +540,10 @@ def fused_linear_cross_entropy(
     regardless of batch/sequence length. This mirrors the fused linear cross-entropy used by the GenLIP
     reference (Liger kernel) and is essential for large vocabularies (~100k).
 
+    TODO(torch>=2.13): compare/dispatch to ``F.linear_cross_entropy`` once the env has it — verify it
+    bounds memory (not just kernel fusion), matches ignore_index/mean semantics (run
+    tests/test_fused_caption_loss.py against it), and beats this path at ~50k vocab before switching.
+
     Args:
         hidden: ``[N, D]`` features (already flattened over batch/sequence).
         weight: ``[vocab, D]`` projection (e.g. an untied LM head weight).
@@ -520,6 +552,13 @@ def fused_linear_cross_entropy(
         chunk_size: Number of tokens per chunk.
         reduction: ``"mean"`` (over non-ignored tokens) or ``"sum"``.
     """
+    # Drop ignored (padding) positions before the head GEMM -- they carry zero loss and zero grad,
+    # and padded rows are the norm for every caller.
+    valid = target != ignore_index
+    n_valid = valid.sum()
+    hidden = hidden[valid]
+    target = target[valid]
+
     n_tokens = hidden.shape[0]
     use_ckpt = torch.is_grad_enabled() and hidden.requires_grad
     total = hidden.new_zeros(())
@@ -534,8 +573,7 @@ def fused_linear_cross_entropy(
             loss_chunk = _chunk_linear_ce(h_chunk, weight, bias, t_chunk, ignore_index)
         total = total + loss_chunk
     if reduction == "mean":
-        n_valid = (target != ignore_index).sum().clamp(min=1)
-        return total / n_valid
+        return total / n_valid.clamp(min=1)
     return total
 
 

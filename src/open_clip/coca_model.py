@@ -1,20 +1,19 @@
 from typing import Dict, List, Optional, Union
 
-import logging
 import torch
 from torch import nn
 from torch.nn import functional as F
 import numpy as np
 from dataclasses import dataclass
 
-_logger = logging.getLogger(__name__)
-
 from .transformer import (
     LayerNormFp32,
     LayerNorm,
     QuickGELU,
+    ModernMultimodalTransformer,
     MultimodalTransformer,
 )
+from .loss import fused_linear_cross_entropy
 from .model import CLIPTextCfg, CLIPVisionCfg, _build_vision_tower, _build_text_tower
 
 
@@ -25,6 +24,12 @@ class MultimodalCfg(CLIPTextCfg):
     heads: int = 8
     n_queries: int = 256
     attn_pooler_heads: int = 8
+    # MaMMUT decoder (MultimodalDecoder) fields, ignored by the CoCa decoder builder
+    cross_attn_ratio: int = 1  # one cross-attn block per N self-attn layers (2 -> after layers 0, 2, 4, ...)
+    use_pad_mask: bool = True  # mask pad tokens from attention in the bi-directional contrastive pass (legacy: False)
+    pool_type: str = 'avg'  # contrastive pool: 'avg' masked mean excl pads | 'avg_all' mean incl pads (legacy)
+    proj_type: str = 'none'  # contrastive text projection; 'none' (paper/legacy) requires embed_dim == width
+    tie_lm_head: bool = False  # share lm_head weight with token_embedding (modern decoder only)
 
 
 def _build_text_decoder_tower(
@@ -33,7 +38,13 @@ def _build_text_decoder_tower(
         quick_gelu: bool = False,
         cast_dtype: Optional[torch.dtype] = None,
 ):
+    # NOTE: CoCa passes the vocab size as ``embed_dim`` -- the decoder's output projection is the vocab head.
     multimodal_cfg = MultimodalCfg(**multimodal_cfg) if isinstance(multimodal_cfg, dict) else multimodal_cfg
+
+    if multimodal_cfg.text_arch == 'modern':
+        # modern decoder is cfg-driven; act/norm come from mlp_type / norm_type (quick_gelu N/A)
+        return ModernMultimodalTransformer(multimodal_cfg, vocab_size=embed_dim)
+
     act_layer = QuickGELU if quick_gelu else nn.GELU
     norm_layer = (
         LayerNormFp32 if cast_dtype in (torch.float16, torch.bfloat16) else LayerNorm
@@ -65,13 +76,17 @@ class CoCa(nn.Module):
             init_logit_bias: Optional[float] = None,
             nonscalar_logit_scale: bool = False,
             cast_dtype: Optional[torch.dtype] = None,
-            pad_id: int = 0,
     ):
         super().__init__()
         self.embed_dim = embed_dim
         multimodal_cfg = MultimodalCfg(**multimodal_cfg) if isinstance(multimodal_cfg, dict) else multimodal_cfg
         text_cfg = CLIPTextCfg(**text_cfg) if isinstance(text_cfg, dict) else text_cfg
         vision_cfg = CLIPVisionCfg(**vision_cfg) if isinstance(vision_cfg, dict) else vision_cfg
+        if vision_cfg.timm_model_name:
+            raise ValueError(
+                "CoCa does not support timm vision towers: caption cross-attention requires token projection "
+                "and validity handling that only MaMMUT's timm path currently provides."
+            )
 
         self.text = _build_text_tower(
             embed_dim=embed_dim,
@@ -106,7 +121,16 @@ class CoCa(nn.Module):
             self.logit_bias = nn.Parameter(torch.ones(lshape) * init_logit_bias)
         else:
             self.logit_bias = None
-        self.pad_id = pad_id
+
+        # pad id is derived from the text tower (the id it masks with: text_cfg.pad_id for native
+        # towers, the transformers config pad_token_id for HF towers) so loss ignore_index and
+        # generation defaults stay consistent with tower masking and tokenizer padding. The 0
+        # fallback is the historical CLIP fill convention (SimpleTokenizer reserves no pad token;
+        # 0 is a real vocab token).
+        pad_id = getattr(self.text, 'pad_id', None)
+        self.pad_id = 0 if pad_id is None else int(pad_id)
+        self.bos_id = getattr(self.text, 'bos_id', None)
+        self.eos_id = getattr(self.text, 'eos_id', None)
 
         self.context_length = multimodal_cfg.context_length
 
@@ -120,8 +144,10 @@ class CoCa(nn.Module):
         image_latent = F.normalize(image_latent, dim=-1) if normalize else image_latent
         return image_latent, tokens_embs
 
-    def _encode_text(self, text, normalize: bool = True):
-        text_latent, token_emb = self.text(text)
+    def _encode_text(self, text, text_valid=None, normalize: bool = True):
+        # text towers keep the HF-style attention_mask kwarg (single-sequence scope); the parent
+        # multimodal interface names the mask by modality (text_valid, alongside NaFlex patch_valid)
+        text_latent, token_emb = self.text(text, attention_mask=text_valid)
         text_latent = F.normalize(text_latent, dim=-1) if normalize else text_latent
         return text_latent, token_emb
 
@@ -129,14 +155,20 @@ class CoCa(nn.Module):
         image_latent, _ = self._encode_image(images, normalize=normalize)
         return image_latent
 
-    def encode_text(self, text, normalize: bool = True):
-        text_latent, _ = self._encode_text(text, normalize=normalize)
+    def encode_text(self, text, text_valid=None, normalize: bool = True):
+        """Encode text, optionally using an exact validity mask.
+
+        ``text_valid`` was inserted before ``normalize``. Legacy positional calls such as
+        ``encode_text(text, False)`` must use ``normalize=False`` after this breaking API change.
+        """
+        text_latent, _ = self._encode_text(text, text_valid=text_valid, normalize=normalize)
         return text_latent
 
     def forward_intermediates(
             self,
             image: Optional[torch.Tensor] = None,
             text: Optional[torch.Tensor] = None,
+            text_valid: Optional[torch.Tensor] = None,
             image_indices: Optional[Union[int, List[int]]] = None,
             text_indices: Optional[Union[int, List[int]]] = None,
             stop_early: bool = False,
@@ -152,9 +184,13 @@ class CoCa(nn.Module):
     ) -> Dict[str, Union[torch.Tensor, List[torch.Tensor]]]:
         """ Forward features that returns intermediates.
 
+        Breaking positional API note: ``text_valid`` was inserted after ``text``; callers passing
+        ``image_indices`` or later arguments positionally must switch those arguments to keywords.
+
         Args:
             image: Input image tensor
             text: Input text tensor
+            text_valid: Optional [B, L] bool/int text validity (True/1 = real token); pad-value fallback when absent
             image_indices: For image tower, Take last n blocks if int, all if None, select matching indices if sequence
             text_indices: Take last n blocks if int, all if None, select matching indices if sequence
             stop_early: Stop iterating over blocks when last desired intermediate hit
@@ -195,6 +231,7 @@ class CoCa(nn.Module):
         if text is not None:
             text_output = self.text.forward_intermediates(
                 text,
+                attention_mask=text_valid,
                 indices=text_indices,
                 stop_early=stop_early,
                 normalize_intermediates=normalize_intermediates,
@@ -219,28 +256,53 @@ class CoCa(nn.Module):
             self,
             image: Optional[torch.Tensor] = None,
             text: Optional[torch.Tensor] = None,
+            text_valid: Optional[torch.Tensor] = None,
             image_latent: Optional[torch.Tensor] = None,
             image_embs: Optional[torch.Tensor] = None,
+            labels: Optional[torch.Tensor] = None,
     ):
+        """text_valid: optional [B, L] bool/int text validity (True/1 = real token), consumed by the
+        text tower's pad/cls masking (passed down as its HF-style ``attention_mask``); validity falls
+        back to ``text != pad_id`` when absent. Caption logits are causal over right-padded text and
+        need no mask; label masking for the caption loss happens task-side.
+
+        Breaking positional API note: ``text_valid`` was inserted after ``text``; callers passing
+        ``image_latent`` or later arguments positionally must switch those arguments to keywords.
+
+        labels: optional [B, L-1] AR-shifted caption labels (-100 = ignore, task-built). When given,
+        returns ``caption_loss`` via the fused linear cross-entropy (full-vocab logits are never
+        materialized) instead of ``logits``."""
         if image is not None and (image_latent is None or image_embs is None):
             image_latent, image_embs = self._encode_image(image)
 
         if text is None:
             return {"image_features": image_latent, "image_embs": image_embs}
 
-        text_latent, token_embs = self._encode_text(text)
+        text_latent, token_embs = self._encode_text(text, text_valid=text_valid)
 
         if image_latent is None:
             return {"text_features": text_latent}
 
-        logits = self.text_decoder(image_embs, token_embs)
-
         out_dict = {
             "image_features": image_latent,
             "text_features": text_latent,
-            "logits": logits,
             "logit_scale": self.logit_scale.exp(),
         }
+        if labels is not None:
+            # fused caption loss: hidden positions [0, L-1) predict tokens [1, L) (same shift the
+            # task applies to logits on the legacy path)
+            hidden = self.text_decoder(image_embs, token_embs, return_hidden=True)
+            pred = hidden[:, :-1]
+            weight, bias = self.text_decoder.lm_head_params
+            out_dict["caption_loss"] = fused_linear_cross_entropy(
+                pred.reshape(-1, pred.shape[-1]),
+                weight,
+                labels.reshape(-1),
+                bias=bias,
+                ignore_index=-100,
+            )
+        else:
+            out_dict["logits"] = self.text_decoder(image_embs, token_embs)
         if self.logit_bias is not None:
             out_dict["logit_bias"] = self.logit_bias
         return out_dict
@@ -265,115 +327,39 @@ class CoCa(nn.Module):
         repetition_penalty=1.0,
         fixed_output_length=False,
         generation_config=None,
+        text_valid=None,
     ):
-        assert seq_len > min_seq_len, "seq_len must be larger than min_seq_len"
-        if stopping_criteria is not None:
-            import warnings
-            warnings.warn(
-                "stopping_criteria is deprecated and ignored. Use "
-                "generation_config=GenerationConfig(...) for full control.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
         try:
-            from .generation import MultimodalGenerationWrapper
-            from transformers import GenerationConfig as GC
+            from .generation import generate_multimodal
         except (ImportError, Exception) as e:
             raise RuntimeError(
                 "Please install transformers for generate functionality. "
                 "`pip install transformers`."
             ) from e
 
-        device = image.device
-        sot_token_id = 49406 if sot_token_id is None else sot_token_id
-        eos_token_id = 49407 if eos_token_id is None else eos_token_id
-        pad_token_id = self.pad_id if pad_token_id is None else pad_token_id
-
-        with torch.no_grad():
-            image_latent, image_embs = self._encode_image(image)
-
-            squeeze_output = False
-            if text is None:
-                text = torch.full(
-                    (image.shape[0], 1), sot_token_id,
-                    device=device, dtype=torch.long,
-                )
-            elif text.dim() == 1:
-                text = text.unsqueeze(0)
-                squeeze_output = True
-
-            was_training = self.training
-            self.eval()
-
-            vocab_size = self.text.token_embedding.weight.shape[0]
-            wrapper = MultimodalGenerationWrapper(
-                text_encoder_fn=lambda ids: self._encode_text(ids)[1],
-                text_decoder_fn=self.text_decoder,
-                image_embs=image_embs,
-                vocab_size=vocab_size,
-                pad_token_id=pad_token_id,
-                eos_token_id=eos_token_id,
-                bos_token_id=sot_token_id,
-            )
-
-            if generation_config is None:
-                # seq_len / min_seq_len are *total* sequence lengths (including
-                # the prompt) to match the original API semantics.
-                gen_kwargs = dict(
-                    max_length=seq_len,
-                    min_length=min_seq_len,
-                    repetition_penalty=repetition_penalty,
-                    eos_token_id=eos_token_id,
-                    pad_token_id=pad_token_id,
-                    use_cache=False,
-                )
-                if generation_type == "beam_search":
-                    if num_beam_groups > 1:
-                        _logger.warning(
-                            "Group beam search (num_beam_groups > 1) requires the "
-                            "transformers community extension. Falling back to "
-                            "standard beam search (num_beam_groups=1). Pass a "
-                            "GenerationConfig directly for full control."
-                        )
-                        num_beam_groups = 1
-                    gen_kwargs.update(
-                        num_beams=num_beams,
-                        num_beam_groups=num_beam_groups,
-                    )
-                elif generation_type == "top_p":
-                    gen_kwargs.update(do_sample=True, top_p=top_p, temperature=temperature)
-                elif generation_type == "top_k":
-                    gen_kwargs.update(do_sample=True, top_k=top_k, temperature=temperature)
-                else:
-                    raise ValueError(
-                        f"generation_type must be one of 'beam_search', 'top_p', 'top_k', "
-                        f"got {generation_type!r}"
-                    )
-                generation_config = GC(**gen_kwargs)
-            else:
-                # KV-cache is not supported yet; force off regardless of what
-                # the caller set to avoid cache-related errors.
-                generation_config.use_cache = False
-
-            output = wrapper.generate(
-                text,
-                generation_config=generation_config,
-                image_embs=image_embs,
-            )
-
-            if fixed_output_length and output.shape[1] < seq_len:
-                pad_len = seq_len - output.shape[1]
-                output = torch.cat(
-                    (output, torch.full(
-                        (output.shape[0], pad_len), pad_token_id,
-                        device=device, dtype=output.dtype,
-                    )),
-                    dim=1,
-                )
-
-            if squeeze_output:
-                output = output.squeeze(0)
-
-            self.train(was_training)
-            return output
-
+        return generate_multimodal(
+            self,
+            image=image,
+            image_embs_fn=lambda images: self._encode_image(images)[1],
+            text_encoder_fn=lambda ids: self._encode_text(ids)[1],
+            text_decoder_fn=self.text_decoder,
+            decoder=self.text_decoder,
+            text=text,
+            text_valid=text_valid,
+            seq_len=seq_len,
+            max_seq_len=max_seq_len,
+            temperature=temperature,
+            generation_type=generation_type,
+            top_p=top_p,
+            top_k=top_k,
+            pad_token_id=pad_token_id,
+            eos_token_id=eos_token_id,
+            sot_token_id=sot_token_id,
+            num_beams=num_beams,
+            num_beam_groups=num_beam_groups,
+            min_seq_len=min_seq_len,
+            stopping_criteria=stopping_criteria,
+            repetition_penalty=repetition_penalty,
+            fixed_output_length=fixed_output_length,
+            generation_config=generation_config,
+        )

@@ -338,6 +338,24 @@ def main(args):
     text_tower = getattr(model, 'text', None)
     args.variable_text = bool(getattr(args, 'variable_text', False) or getattr(text_tower, 'variable_text', False))
 
+    # Resolve --text-attention-mask before params logging so the recorded value reflects what the
+    # data pipeline actually emits. Auto: generative image-text models consume text validity masks
+    # (attention/pooling + -100 caption-label masking). Mirror create_task dispatch: model type,
+    # EXCEPT distillation, which takes precedence over CoCa/MaMMUT and yields a DistillCLIPTask
+    # that does not consume the batch key.
+    from open_clip import CoCa, MaMMUT
+    _mask_consumer = isinstance(unwrap_model(model), (CoCa, MaMMUT)) and not args.distill
+    if args.text_attention_mask is None:
+        args.text_attention_mask = _mask_consumer
+    elif args.text_attention_mask and not _mask_consumer:
+        # fail fast: other tasks don't accept the batch key -- e.g. CLIPTask silently drops it in
+        # training_forward but the grad-accumulation path would crash on the unexpected key
+        raise ValueError(
+            "--text-attention-mask requires a task that consumes text validity masks "
+            "(CoCa / MaMMUT, without --distill); GenLIP/GenLAP and variable-text pipelines derive "
+            "validity in their collators, and CLIP-style contrastive tasks do not use one."
+        )
+
     if is_master(args):
         _logger.info("Model:")
         _logger.info(f"{str(model)}")
@@ -377,15 +395,19 @@ def main(args):
         backend=args.torchcompile_backend,
         mode=args.torchcompile_mode,
     )
+    naflex_multimodal = args.use_naflex and isinstance(unwrap_model(model), MaMMUT)
     if args.torchcompile and args.distributed and not args.fsdp and (
-            args.grad_checkpointing or getattr(args, 'genlip', False)
+            args.grad_checkpointing or getattr(args, 'genlip', False) or naflex_multimodal
     ):
         # The DDP dynamo optimizer splits the graph into submodules at gradient-bucket boundaries. That
-        # breaks under (a) grad checkpointing and (b) GenLIP's dynamic sequence length (image patches +
-        # variable caption length = `const + symbol`): a submodule receives the concatenated tensor but
-        # not the input that binds the symbol, so Inductor can't recover it ("expected [sN] to have been
-        # codegen-ed"). Disable the split so the whole forward compiles as one symbol-consistent graph.
-        reason = 'grad checkpointing' if args.grad_checkpointing else 'genlip dynamic shapes'
+        # breaks under (a) grad checkpointing and (b) dynamic cross-bucket sequence lengths (image patches +
+        # variable caption length = `const + symbol`, hit by GenLIP and by MaMMUT under NaFlex data):
+        # a submodule receives the concatenated tensor but not the input that binds the symbol, so Inductor
+        # can't recover it ("expected [sN] to have been codegen-ed"). Disable the split so the whole forward
+        # compiles as one symbol-consistent graph.
+        reason = ('grad checkpointing' if args.grad_checkpointing
+                  else 'genlip dynamic shapes' if getattr(args, 'genlip', False)
+                  else 'naflex multimodal dynamic shapes')
         _logger.info(f'Disabling DDP dynamo optimizer ({reason}).')
         torch._dynamo.config.optimize_ddp = False
 

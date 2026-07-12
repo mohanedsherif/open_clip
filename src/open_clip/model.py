@@ -28,6 +28,8 @@ from .transformer import (
     VisionTransformer,
     TextTransformer,
     ModernTextTransformer,
+    MultimodalTransformer,
+    MultimodalDecoder,
     text_global_pool,
     lock_text_tower,
 )
@@ -92,6 +94,14 @@ class CLIPTextCfg:
     mlp_ratio: float = 4.0
     ls_init_value: Optional[float] = None  # layer scale initial value
     embed_cls: bool = False
+    # correct cls/pad additive-mask construction for CoCa (legacy False = historical off-by-one where the
+    # mask is built as if the cls token were at the front while it is appended at the end)
+    correct_cls_mask: bool = False
+    use_pad_mask: bool = False  # mask pad keys in bi-directional (no_causal_mask) mode
+    # id that fills padding positions (tower masking, caption-loss ignore_index, generation default).
+    # 0 is the historical CLIP/SimpleTokenizer fill convention (no reserved pad token; 0 is a real vocab
+    # token). Tokenizers with a reserved pad (roberta=1, tiktoken=100278, ...) require this to match;
+    # generative configs must set it explicitly then (validated in get_tokenizer).
     pad_id: int = 0
     bos_id: Optional[int] = None
     # Only used for pool_type == 'eos' (and the modern text arch 'argmax' remap). No default on purpose: it must
@@ -120,6 +130,10 @@ class CLIPTextCfg:
 
     # ModernTextTransformer settings (text_arch == "modern")
     attention_mode: str = "causal"  # "causal" or "bidirectional"
+    # Zero-init + gradient-freeze the pad row of the token embedding (nn.Embedding padding_idx). Tri-state:
+    # None = arch default (True, matching existing modern text runs). Set False when the pad id collides
+    # with a real vocab token (SimpleTokenizer fills with 0 == '!'), where freezing would corrupt it.
+    freeze_pad_embed: Optional[bool] = None
     pos_embed: str = "rope"
     rope_temperature: float = 10000.0
     mlp_type: str = "swiglu"  # "swiglu", "mlp" (GELU), or "relu2" (squared-ReLU)
@@ -195,6 +209,7 @@ def _build_vision_tower(
             embed_dim=embed_dim,
             image_size=vision_cfg.image_size,
             model_kwargs=vision_cfg.timm_model_kwargs,
+            output_tokens=vision_cfg.output_tokens,
         )
     elif isinstance(vision_cfg.layers, (tuple, list)):
         vision_heads = vision_cfg.width * 32 // vision_cfg.head_width
@@ -248,6 +263,20 @@ def _build_vision_tower(
     return visual
 
 
+def _pooled_image_features(output: Any) -> torch.Tensor:
+    """Select the pooled feature from vision towers that optionally expose token sidecars."""
+    if isinstance(output, dict):
+        try:
+            return output['pooled']
+        except KeyError as ex:
+            raise KeyError("vision tower dictionary output must contain a 'pooled' tensor.") from ex
+    if isinstance(output, (tuple, list)):
+        if not output:
+            raise ValueError("vision tower returned an empty output sequence.")
+        return output[0]
+    return output
+
+
 def _build_text_tower(
         embed_dim: int,
         text_cfg: CLIPTextCfg,
@@ -294,8 +323,11 @@ def _build_text_tower(
             ls_init_value=text_cfg.ls_init_value,
             output_dim=embed_dim,
             embed_cls=text_cfg.embed_cls,
+            correct_cls_mask=text_cfg.correct_cls_mask,
             no_causal_mask=text_cfg.no_causal_mask,
+            use_pad_mask=text_cfg.use_pad_mask,
             pad_id=text_cfg.pad_id,
+            bos_id=text_cfg.bos_id,
             eos_id=text_cfg.eos_id,
             pool_type=text_cfg.pool_type,
             proj_type=text_cfg.proj_type,
@@ -387,7 +419,7 @@ class CLIP(nn.Module):
         return no_wd
 
     def _encode_image(self, image, normalize: bool = False):
-        features = self.visual(image)
+        features = _pooled_image_features(self.visual(image))
         return F.normalize(features, dim=-1) if normalize else features
 
     def encode_image(self, image, normalize: bool = False):
@@ -600,7 +632,7 @@ class CustomTextCLIP(nn.Module):
         return no_wd
 
     def _encode_image(self, image, normalize: bool = False):
-        features = self.visual(image)
+        features = _pooled_image_features(self.visual(image))
         return F.normalize(features, dim=-1) if normalize else features
 
     def encode_image(self, image, normalize: bool = False):
@@ -750,17 +782,23 @@ def convert_weights_to_lp(model: nn.Module, dtype=torch.float16):
                 if tensor is not None:
                     tensor.data = tensor.data.to(dtype)
 
-        if isinstance(l, (CLIP, TextTransformer)):
-            # convert text nn.Parameter projections
-            attr = getattr(l, "text_projection", None)
-            if attr is not None:
-                attr.data = attr.data.to(dtype)
+        if isinstance(l, (CLIP, TextTransformer, MultimodalTransformer, MultimodalDecoder)):
+            # convert text nn.Parameter projections / heads (nn.Linear variants are handled above)
+            for attr_name in ("text_projection", "lm_head"):
+                attr = getattr(l, attr_name, None)
+                if attr is not None and isinstance(attr, nn.Parameter):
+                    attr.data = attr.data.to(dtype)
 
         if isinstance(l, VisionTransformer):
             # convert vision nn.Parameter projections
             attr = getattr(l, "proj", None)
             if attr is not None:
                 attr.data = attr.data.to(dtype)
+
+        # MaMMUT model-level image->text kv projection (raw nn.Parameter)
+        attr = getattr(l, "map_viz2txt_kv", None)
+        if attr is not None:
+            attr.data = attr.data.to(dtype)
 
     model.apply(_convert_weights)
 

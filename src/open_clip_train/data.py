@@ -25,7 +25,7 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, IterableDataset, get_worker_info
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data.distributed import DistributedSampler
-from webdataset.filters import _shuffle
+from webdataset.filters import _shuffle, pipelinefilter, reraise_exception
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
 
 # Finite backstop for PIL's decompression-bomb guard (warn > this, error > 2x), mainly for the side paths
@@ -37,9 +37,16 @@ class TokenizeText:
     # Module-level callable replaces inline lambdas in webdataset pipelines so
     # they survive pickling — required under forkserver multiprocessing
     # (Python 3.14+ default on POSIX).
-    def __init__(self, tokenizer, variable: bool = False):
+    def __init__(self, tokenizer, variable: bool = False, output_mask: bool = False):
         self.tokenizer = tokenizer
         self.variable = variable
+        # output_mask: emit a per-sample bool validity mask (batch key "text_valid", True = real token),
+        # consumed by generative models (attention/pooling + -100 caption-label masking). Only the
+        # sample-level entry point (map_sample) emits it; __call__ always returns tokens only, so
+        # value-level pipeline stages (wds.map_dict) are unaffected. Mutually exclusive with variable
+        # text, whose collators derive their own validity.
+        assert not (variable and output_mask), 'variable-text collation derives its own validity mask'
+        self.output_mask = output_mask
 
     def __call__(self, text):
         # Bucketed pipelines tokenize before `wds.decode` runs (the bucket pool holds raw, undecoded samples),
@@ -51,6 +58,38 @@ class TokenizeText:
         if self.variable:
             return self.tokenizer(text, pad=False)[0]
         return self.tokenizer(text)[0]
+
+    def map_sample(self, sample):
+        # Sample-level map (wds.map) so the text_valid mask can ride alongside the tokens.
+        text = sample["text"]
+        if isinstance(text, bytes):
+            text = text.decode('utf-8')
+        if self.output_mask:
+            tokens, mask = self.tokenizer(text, output_mask=True)
+            sample["text"] = tokens[0]
+            sample["text_valid"] = mask[0]
+        else:
+            sample["text"] = self(text)
+        return sample
+
+
+def _map_no_key(data, f, handler=reraise_exception):
+    """Like wds.map, but do not synthesize __key__ on dict outputs."""
+    for sample in data:
+        try:
+            result = f(sample)
+        except Exception as exn:
+            if handler(exn):
+                continue
+            else:
+                break
+        if result is None:
+            continue
+        yield result
+
+
+map_no_key = pipelinefilter(_map_no_key)
+
 
 from open_clip_train.naflex_data import (
     CaptionLength,
@@ -101,6 +140,7 @@ class CsvDataset(Dataset):
             sep="\t",
             tokenizer=None,
             variable_text: bool = False,
+            output_text_mask: bool = False,
     ):
         _logger.debug(f'Loading csv data from {input_filename}.')
         df = pd.read_csv(input_filename, sep=sep)
@@ -117,6 +157,8 @@ class CsvDataset(Dataset):
 
         self.tokenize = tokenizer
         self.variable_text = variable_text
+        assert not (variable_text and output_text_mask), 'variable-text collation derives its own validity mask'
+        self.output_text_mask = output_text_mask
 
     def __len__(self):
         return len(self.images)
@@ -128,6 +170,9 @@ class CsvDataset(Dataset):
         caption = str(self.captions.iloc[idx])
         if self.variable_text:
             text = self.tokenize(caption, pad=False)[0]
+        elif self.output_text_mask:
+            text, mask = self.tokenize([caption], output_mask=True)
+            return {"image": image, "text": text[0], "text_valid": mask[0]}
         else:
             text = self.tokenize([caption])[0]
         return {"image": image, "text": text}
@@ -640,8 +685,15 @@ def append_naflex_train_stages(
     if not naflex_data_config.variable_patch_size:
         patch_size = patch_size_choices[0]
         patch_size_choices = None
+    max_tokens_per_batch = naflex_data_config.resolve_max_tokens_per_batch(
+        args.batch_size,
+        per_row_text_tokens=per_row_text_tokens,
+    )
 
-    stages = [wds.map_dict(text=tokenize_text)]
+    stages = [
+        map_no_key(tokenize_text.map_sample, handler=log_and_continue)
+        if getattr(tokenize_text, 'output_mask', False) else wds.map_dict(text=tokenize_text)
+    ]
     if bucketer is not None:
         # Reorder samples so similar lengths batch together (text for image, audio_tokens for audio),
         # tightening per-batch-max padding. Reorder-only -> schedule / num_batches / DDP unchanged. The caller
@@ -655,7 +707,7 @@ def append_naflex_train_stages(
         patch_size_choice_probs=naflex_data_config.train_patch_size_probs,
         seq_lens=naflex_data_config.train_seq_lens,
         seq_len_choice_probs=naflex_data_config.train_seq_len_probs,
-        max_tokens_per_batch=naflex_data_config.max_tokens_per_batch,
+        max_tokens_per_batch=max_tokens_per_batch,
         transform_factory=transform_factory,
         seed=args.seed,
         shuffle=True,
@@ -673,14 +725,14 @@ def append_naflex_train_stages(
         decode_fn=decode_fn,
         decode_error_handler=decode_error_handler,
     ))
-    if pad_id is not None:
-        _logger.info(
-            f"NaFlex batch budget = {naflex_data_config.max_tokens_per_batch} modality tokens/row-batch "
-            f"({primary_key} bucket"
-            + (f" + text cap {per_row_text_tokens}" if per_row_text_tokens else "")
-            + ")"
-            + ("; length bucketing ON" if bucketer is not None else "")
-        )
+    budget_source = "explicit" if naflex_data_config.max_tokens_per_batch is not None else "inferred"
+    _logger.info(
+        f"NaFlex batch budget = {max_tokens_per_batch} tokens/local batch ({budget_source}; "
+        f"{primary_key} bucket"
+        + (f" + text cap {per_row_text_tokens}" if per_row_text_tokens else "")
+        + ")"
+        + ("; length bucketing ON" if bucketer is not None else "")
+    )
     pipeline.extend(stages)
     return pipeline[-1]
 
@@ -783,7 +835,8 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
     text_pad_cap = getattr(tokenizer, 'context_length', None)
     naflex_pad_id = text_pad_id if text_variable else None
     naflex_text_cost = (getattr(tokenizer, 'context_length', 0) or 0) if genlip_text else 0
-    tokenize_text = TokenizeText(tokenizer, variable=text_variable)
+    output_text_mask = bool(getattr(args, 'text_attention_mask', None)) and not text_variable
+    tokenize_text = TokenizeText(tokenizer, variable=text_variable, output_mask=output_text_mask)
 
     # Length bucketing reorders by caption length (train-only; only meaningful for variable text).
     use_bucketing = is_train and text_variable and getattr(args, 'length_bucketing', False)
@@ -853,9 +906,15 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
         dataset = wds.DataPipeline(*pipeline)
         num_batches, num_samples = naflex_loader_counts(naflex_batcher, args)
     elif use_naflex_eval:
-        pipeline.extend([
-            decode_image,
-            wds.map_dict(image=preprocess_img, text=tokenize_text),
+        pipeline.append(decode_image)
+        if output_text_mask:
+            pipeline.extend([
+                map_no_key(tokenize_text.map_sample, handler=log_and_continue),
+                wds.map_dict(image=preprocess_img),
+            ])
+        else:
+            pipeline.append(wds.map_dict(image=preprocess_img, text=tokenize_text))
+        pipeline.append(
             wds.batched(
                 args.batch_size,
                 partial=True,
@@ -866,23 +925,27 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
                     text_pad_multiple=text_pad_multiple,
                     text_pad_cap=text_pad_cap,
                 ),
-            ),
-        ])
+            )
+        )
         dataset = wds.DataPipeline(*pipeline)
     else:
-        collate_fn = (
-            partial(
+        if text_variable:
+            collate_fn = partial(
                 collate_variable_text_dicts,
                 pad_id=text_pad_id,
                 text_pad_multiple=text_pad_multiple,
                 text_pad_cap=text_pad_cap,
             )
-            if text_variable else default_collate
-        )
+        else:
+            collate_fn = default_collate
         # Tokenize -> [bucket] -> decode -> transform -> batch. Bucketing reorders by caption length so
         # similar-length captions batch together: tighter per-batch-max text padding and fewer distinct
         # text shapes (stacks with --text-pad-multiple).
-        stages = [wds.map_dict(text=tokenize_text)]
+        # Sample-level map when emitting attention masks (the mask needs its own sample key).
+        stages = [
+            map_no_key(tokenize_text.map_sample, handler=log_and_continue)
+            if output_text_mask else wds.map_dict(text=tokenize_text)
+        ]
         if use_bucketing:
             stages.append(LengthBucketer(
                 length_fns=[CaptionLength(key="text")],
@@ -987,6 +1050,7 @@ def get_csv_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None, nafl
         sep=args.csv_separator,
         tokenizer=tokenizer,
         variable_text=text_variable,
+        output_text_mask=bool(getattr(args, 'text_attention_mask', None)) and not text_variable,
     )
 
     if use_naflex_train:
@@ -998,6 +1062,10 @@ def get_csv_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None, nafl
         # GenLIP includes caption-token cap in the batch budget; other variable-text towers only need padding.
         naflex_pad_id = text_pad_id if (genlip_text or variable_text) else None
         naflex_text_cost = (getattr(tokenizer, 'context_length', 0) or 0) if genlip_text else 0
+        max_tokens_per_batch = naflex_data_config.resolve_max_tokens_per_batch(
+            args.batch_size,
+            per_row_text_tokens=naflex_text_cost,
+        )
         dataset = NaFlexMapDatasetWrapper(
             dataset,
             train_num_tokens=naflex_data_config.train_num_image_tokens,
@@ -1006,7 +1074,7 @@ def get_csv_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None, nafl
             patch_size_choice_probs=naflex_data_config.train_patch_size_probs,
             seq_lens=naflex_data_config.train_seq_lens,
             seq_len_choice_probs=naflex_data_config.train_seq_len_probs,
-            max_tokens_per_batch=naflex_data_config.max_tokens_per_batch,
+            max_tokens_per_batch=max_tokens_per_batch,
             transform_factory=preprocess_fn,
             seed=args.seed,
             shuffle=True,
@@ -1063,6 +1131,7 @@ class SyntheticDataset(Dataset):
             dataset_size=100,
             tokenizer=None,
             variable_text: bool = False,
+            output_text_mask: bool = False,
     ):
         self.transform = transform
         self.image_size = image_size
@@ -1070,15 +1139,15 @@ class SyntheticDataset(Dataset):
         self.image = Image.new('RGB', image_size)
         self.dataset_size = dataset_size
 
-        self.preprocess_txt = TokenizeText(tokenizer, variable=variable_text)
+        self.preprocess_txt = TokenizeText(tokenizer, variable=variable_text, output_mask=output_text_mask)
 
     def __len__(self):
         return self.dataset_size
 
     def __getitem__(self, idx):
-        if self.transform is not None:
-            image = self.transform(self.image)
-        return {"image": image, "text": self.preprocess_txt(self.caption)}
+        image = self.transform(self.image) if self.transform is not None else self.image
+        sample = {"image": image, "text": self.caption}
+        return self.preprocess_txt.map_sample(sample)
 
 
 def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None, naflex_data_config=None):
@@ -1098,6 +1167,7 @@ def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None
         dataset_size=args.train_num_samples,
         tokenizer=tokenizer,
         variable_text=variable_text,
+        output_text_mask=bool(getattr(args, 'text_attention_mask', None)) and not variable_text,
     )
     num_samples = len(dataset)
     sampler = DistributedSampler(dataset) if args.distributed and is_train else None

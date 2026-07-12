@@ -278,7 +278,9 @@ def parse_args(args):
              "relative to large epochs. No effect when --workers 0."
     )
     parser.add_argument(
-        "--batch-size", type=int, default=64, help="Batch size per GPU. Ignored for NaFlex WebDataset training."
+        "--batch-size", type=int, default=64,
+        help="Batch size per GPU. For NaFlex training, this is the reference batch size at the longest configured "
+             "sequence when --naflex-max-tokens-per-batch is unset (before --naflex-batch-divisor rounding)."
     )
     parser.add_argument(
         "--epochs", type=int, default=32, help="Number of epochs to train for."
@@ -676,16 +678,34 @@ def parse_args(args):
              "epoch running average).",
     )
     parser.add_argument(
+        "--text-attention-mask",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="Emit a per-sample text validity mask (batch key 'text_valid', True = real token) from the "
+             "tokenizer into batches, consumed by generative models for attention/pooling and -100 "
+             "caption-label masking. Default (unset) auto-enables for CoCa/MaMMUT models (not distilled) "
+             "and stays off otherwise (CLIP-style contrastive models don't consume it)."
+    )
+    parser.add_argument(
         "--coca-caption-loss-weight",
         type=float,
         default=2.0,
-        help="Weight assigned to caption loss in CoCa."
+        help="Weight assigned to caption loss in CoCa / MaMMUT (MaMMUT paper uses 1.0)."
     )
     parser.add_argument(
         "--coca-contrastive-loss-weight",
         type=float,
         default=1.0,
-        help="Weight assigned to contrastive loss when training CoCa."
+        help="Weight assigned to contrastive loss when training CoCa / MaMMUT."
+    )
+    parser.add_argument(
+        "--fused-caption-loss",
+        default=False,
+        action="store_true",
+        help="CoCa / MaMMUT: compute the caption loss inside the model via chunked fused "
+             "linear cross-entropy (never materializes the [B, L, vocab] logits; large memory "
+             "saving at big batch). Loss values match the default (logits) path exactly. "
+             "Not yet supported with --accum-freq > 1."
     )
     parser.add_argument(
         "--remote-sync",
@@ -796,10 +816,10 @@ def parse_args(args):
     parser.add_argument(
         "--naflex-max-tokens-per-batch",
         type=int,
-        default=4096 * 4,
-        help="Maximum tokens per local NaFlex batch. For GenLIP each row costs image_seq_len + "
-             "--naflex-max-text-tokens, so this is a total (image+text) token budget; for image-only "
-             "models it counts image tokens."
+        default=None,
+        help="Maximum tokens per local NaFlex batch. When unset, inferred as --batch-size times the largest "
+             "--naflex-seq-lens row cost; GenLIP/GenLAP row cost also includes the caption-token cap. "
+             "An explicit value overrides this inference."
     )
     parser.add_argument(
         "--naflex-max-text-tokens",

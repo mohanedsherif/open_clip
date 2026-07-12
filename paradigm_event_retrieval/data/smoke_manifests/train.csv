@@ -1,0 +1,25 @@
+filepath,event_id,category,caption,caption_type,split
+event_smoke_003/backdrops/backdrops.png,event_smoke_003,backdrops,corporate stage background with logos,search,train
+event_smoke_003/ballroom_layouts/ballroom_layouts.png,event_smoke_003,ballroom_layouts,round tables facing a conference stage,detailed,train
+event_smoke_003/podiums/podiums.png,event_smoke_003,podiums,a speaker standing behind a branded podium,detailed,train
+event_smoke_003/stage_setups/stage_setups.png,event_smoke_003,stage_setups,a wide conference stage prepared for a presentation,detailed,train
+event_smoke_004/exhibition_booths/exhibition_booths.png,event_smoke_004,exhibition_booths,a branded exhibition booth,category,train
+event_smoke_004/giveaways/giveaways.png,event_smoke_004,giveaways,promotional giveaways arranged on a table,category,train
+event_smoke_004/lighting_systems/lighting_systems.png,event_smoke_004,lighting_systems,conference stage lighting,search,train
+event_smoke_004/registration_counters/registration_counters.png,event_smoke_004,registration_counters,an event registration desk,category,train
+event_smoke_005/backdrops/backdrops.png,event_smoke_005,backdrops,a conference stage with a decorative background,detailed,train
+event_smoke_005/ballroom_layouts/ballroom_layouts.png,event_smoke_005,ballroom_layouts,round tables facing a conference stage,detailed,train
+event_smoke_005/podiums/podiums.png,event_smoke_005,podiums,a speaker standing behind a branded podium,detailed,train
+event_smoke_005/stage_setups/stage_setups.png,event_smoke_005,stage_setups,stage with large LED screens,search,train
+event_smoke_006/exhibition_booths/exhibition_booths.png,event_smoke_006,exhibition_booths,branded event booth,search,train
+event_smoke_006/giveaways/giveaways.png,event_smoke_006,giveaways,branded event gifts displayed for attendees,detailed,train
+event_smoke_006/lighting_systems/lighting_systems.png,event_smoke_006,lighting_systems,professional stage lighting at a conference,detailed,train
+event_smoke_006/registration_counters/registration_counters.png,event_smoke_006,registration_counters,conference registration area,search,train
+event_smoke_007/backdrops/backdrops.png,event_smoke_007,backdrops,a branded event backdrop,category,train
+event_smoke_007/ballroom_layouts/ballroom_layouts.png,event_smoke_007,ballroom_layouts,a wide photograph of a ballroom prepared for an event,category,train
+event_smoke_007/podiums/podiums.png,event_smoke_007,podiums,modern podium with stage lighting,search,train
+event_smoke_007/stage_setups/stage_setups.png,event_smoke_007,stage_setups,a professional photograph of an event stage setup,category,train
+event_smoke_008/exhibition_booths/exhibition_booths.png,event_smoke_008,exhibition_booths,a branded exhibition booth,category,train
+event_smoke_008/giveaways/giveaways.png,event_smoke_008,giveaways,branded event gifts displayed for attendees,detailed,train
+event_smoke_008/lighting_systems/lighting_systems.png,event_smoke_008,lighting_systems,event lighting equipment,category,train
+event_smoke_008/registration_counters/registration_counters.png,event_smoke_008,registration_counters,a branded reception counter near an event entrance,detailed,train

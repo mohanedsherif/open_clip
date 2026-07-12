@@ -1,0 +1,6 @@
+# Install the checked-out OpenCLIP package first: pip install -e ".[training]"
+# Tested versions are recorded only after validation in requirements-tested.txt.
+PyYAML>=6.0.3
+Pillow>=12.3.0
+numpy>=2.5.1
+pytest>=9.1.1

@@ -1,0 +1,61 @@
+categories:
+  _default:
+    category: ["a professional photograph of an event detail"]
+    detailed: ["a corporate event scene prepared for attendees"]
+    search: ["event photography detail"]
+  podiums:
+    category: ["a professional photograph of an event podium"]
+    detailed: ["a branded lectern positioned on a conference stage", "a speaker standing behind a branded podium"]
+    search: ["modern podium with stage lighting", "conference podium on stage"]
+  backdrops:
+    category: ["a branded event backdrop"]
+    detailed: ["a conference stage with a decorative background", "sponsor branding behind an event stage"]
+    search: ["corporate stage background with logos"]
+  stage_setups:
+    category: ["a professional photograph of an event stage setup"]
+    detailed: ["a wide conference stage prepared for a presentation"]
+    search: ["wide stage setup with blue lighting", "stage with large LED screens"]
+  registration_counters:
+    category: ["an event registration desk"]
+    detailed: ["guests checking in at a conference counter", "a branded reception counter near an event entrance"]
+    search: ["conference registration area"]
+  ballroom_layouts:
+    category: ["a wide photograph of a ballroom prepared for an event"]
+    detailed: ["round tables facing a conference stage", "an empty event hall before guests arrive"]
+    search: ["corporate ballroom layout with tables and chairs"]
+  exhibition_booths:
+    category: ["a branded exhibition booth"]
+    detailed: ["a corporate exhibition booth prepared for visitors"]
+    search: ["branded event booth"]
+  giveaways:
+    category: ["promotional giveaways arranged on a table"]
+    detailed: ["branded event gifts displayed for attendees"]
+    search: ["promotional items on a table"]
+  signage:
+    category: ["event signage"]
+    detailed: ["directional signage at a corporate event"]
+    search: ["conference sign"]
+  logos:
+    category: ["event sponsor logos"]
+    detailed: ["repeated sponsor branding at an event"]
+    search: ["sponsor wall with repeated logos"]
+  gates:
+    category: ["a branded event entrance gate"]
+    detailed: ["an entrance structure for a corporate event"]
+    search: ["branded event gate"]
+  chairs_and_side_tables:
+    category: ["chairs and side tables prepared for a panel discussion"]
+    detailed: ["event seating arranged beside a conference stage"]
+    search: ["panel discussion chairs and tables"]
+  lighting_systems:
+    category: ["event lighting equipment"]
+    detailed: ["professional stage lighting at a conference"]
+    search: ["conference stage lighting"]
+  mockups:
+    category: ["a printed event mockup"]
+    detailed: ["branded printed material prepared for an event"]
+    search: ["event print mockup"]
+  people:
+    category: ["people attending a corporate event"]
+    detailed: ["guests gathered at a conference"]
+    search: ["group photograph at an event"]

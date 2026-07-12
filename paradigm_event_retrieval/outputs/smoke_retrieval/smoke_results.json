@@ -1,0 +1,77 @@
+{
+  "warning": "SMOKE TEST ONLY \u2014 NOT A REAL-WORLD MODEL QUALITY BENCHMARK",
+  "model": {
+    "model_name": "ViT-B-32",
+    "pretrained": "laion2b_s34b_b79k",
+    "checkpoint": null,
+    "device": "cpu",
+    "embedding_dimension": 512
+  },
+  "image_count": 4,
+  "queries": [
+    {
+      "query": "a conference podium",
+      "results": [
+        {
+          "index": 3,
+          "score": 0.19299298524856567
+        },
+        {
+          "index": 0,
+          "score": 0.18461793661117554
+        },
+        {
+          "index": 1,
+          "score": 0.17898187041282654
+        },
+        {
+          "index": 2,
+          "score": 0.16699600219726562
+        }
+      ]
+    },
+    {
+      "query": "a branded event backdrop",
+      "results": [
+        {
+          "index": 1,
+          "score": 0.20671889185905457
+        },
+        {
+          "index": 0,
+          "score": 0.20005616545677185
+        },
+        {
+          "index": 2,
+          "score": 0.16476503014564514
+        },
+        {
+          "index": 3,
+          "score": 0.15922477841377258
+        }
+      ]
+    },
+    {
+      "query": "an exhibition booth",
+      "results": [
+        {
+          "index": 0,
+          "score": 0.23971611261367798
+        },
+        {
+          "index": 1,
+          "score": 0.1744232028722763
+        },
+        {
+          "index": 3,
+          "score": 0.1674911081790924
+        },
+        {
+          "index": 2,
+          "score": 0.16403348743915558
+        }
+      ]
+    }
+  ],
+  "seconds": 5.620253699999012
+}

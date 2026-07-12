@@ -1,0 +1,35 @@
+python -m venv .venv
+.\.venv\Scripts\activate
+python -m pip install -U pip
+
+python -m pip install -e .
+
+
+
+Run a small inference script
+import torch
+from PIL import Image
+import open_clip
+
+model, _, preprocess = open_clip.create_model_and_transforms(
+    "ViT-B-32",
+    pretrained="laion2b_s34b_b79k",
+)
+tokenizer = open_clip.get_tokenizer("ViT-B-32")
+
+image = preprocess(Image.open("docs/CLIP.png").convert("RGB")).unsqueeze(0)
+text = tokenizer(["a diagram", "a dog", "a cat"])
+
+with torch.no_grad():
+    image_features = model.encode_image(image)
+    text_features = model.encode_text(text)
+    logits = image_features @ text_features.T
+
+print(logits)
+
+
+
+
+
+If you want to run a full training or eval job instead, use:
+python -m open_clip_train.main --help

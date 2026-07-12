@@ -1,0 +1,14 @@
+base_config: baseline.yaml
+stage: b
+precision: amp_bf16
+epochs: 3
+learning_rate: 3.0e-6
+weight_decay: 0.05
+lock_image: true
+lock_image_unlocked_groups: 2
+lock_text: true
+lock_text_unlocked_layers: 2
+gradient_checkpointing: true
+early_stopping_metric: nDCG@10
+requires_stage_a_improvement: true
+full_model_finetuning: false

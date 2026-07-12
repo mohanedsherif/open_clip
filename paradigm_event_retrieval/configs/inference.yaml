@@ -1,0 +1,6 @@
+model_name: ViT-B-32
+pretrained: openai
+checkpoint: null
+image_batch_size: 32
+text_batch_size: 64
+top_k: 10

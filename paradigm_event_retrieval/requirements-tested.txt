@@ -1,0 +1,12 @@
+# Validated in .venv on 2026-07-12 (CPU-only; no CUDA benchmark possible)
+open_clip_torch==4.2.0.dev0
+torch==2.13.0+cpu
+torchvision==0.28.0+cpu
+timm==1.0.27
+transformers==5.13.0
+numpy==2.5.1
+pillow==12.3.0
+pandas==3.0.3
+PyYAML==6.0.3
+pytest==9.1.1
+braceexpand==0.1.7

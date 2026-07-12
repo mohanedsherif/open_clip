@@ -1,0 +1,5 @@
+filepath,event_id,category,caption,caption_type,split
+event_smoke_001/backdrops/backdrops.png,event_smoke_001,backdrops,a branded event backdrop,category,validation
+event_smoke_001/ballroom_layouts/ballroom_layouts.png,event_smoke_001,ballroom_layouts,a wide photograph of a ballroom prepared for an event,category,validation
+event_smoke_001/podiums/podiums.png,event_smoke_001,podiums,modern podium with stage lighting,search,validation
+event_smoke_001/stage_setups/stage_setups.png,event_smoke_001,stage_setups,wide stage setup with blue lighting,search,validation

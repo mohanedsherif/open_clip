@@ -1,0 +1,5 @@
+filepath,event_id,category,caption,caption_type,split
+event_smoke_002/exhibition_booths/exhibition_booths.png,event_smoke_002,exhibition_booths,a branded exhibition booth,category,test
+event_smoke_002/giveaways/giveaways.png,event_smoke_002,giveaways,branded event gifts displayed for attendees,detailed,test
+event_smoke_002/lighting_systems/lighting_systems.png,event_smoke_002,lighting_systems,conference stage lighting,search,test
+event_smoke_002/registration_counters/registration_counters.png,event_smoke_002,registration_counters,an event registration desk,category,test

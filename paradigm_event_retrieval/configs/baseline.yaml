@@ -1,0 +1,10 @@
+model_name: ViT-B-32
+pretrained: laion2b_s34b_b79k
+device: auto
+batch_size: 32
+seed: 42
+caption_templates: configs/caption_templates.yaml
+data:
+  raw_dir: data/raw
+  manifests_dir: data/manifests
+  evaluation_queries: data/evaluation/queries.json

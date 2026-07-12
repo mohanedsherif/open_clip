@@ -1,0 +1,311 @@
+{
+  "class_imbalance": {
+    "category_count": 8,
+    "largest_to_smallest_ratio": 1.0
+  },
+  "corrupted_images": [],
+  "duplicates": [
+    {
+      "files": [
+        "event_smoke_001/backdrops/backdrops.png",
+        "event_smoke_003/backdrops/backdrops.png",
+        "event_smoke_005/backdrops/backdrops.png",
+        "event_smoke_007/backdrops/backdrops.png"
+      ],
+      "sha256": "64f036513d78d1a095e9a1ad69842c144e3be17bfd2ae9505c3d003a60607f78"
+    },
+    {
+      "files": [
+        "event_smoke_001/ballroom_layouts/ballroom_layouts.png",
+        "event_smoke_003/ballroom_layouts/ballroom_layouts.png",
+        "event_smoke_005/ballroom_layouts/ballroom_layouts.png",
+        "event_smoke_007/ballroom_layouts/ballroom_layouts.png"
+      ],
+      "sha256": "3ceb968dd153225cb27d2792dbd8f003e67d7b9ce6cec7eef0cea3c2561f0a06"
+    },
+    {
+      "files": [
+        "event_smoke_001/podiums/podiums.png",
+        "event_smoke_003/podiums/podiums.png",
+        "event_smoke_005/podiums/podiums.png",
+        "event_smoke_007/podiums/podiums.png"
+      ],
+      "sha256": "435da76912d6c09d9183db34dae644e03c862edf2bc318016775562a6cac0645"
+    },
+    {
+      "files": [
+        "event_smoke_001/stage_setups/stage_setups.png",
+        "event_smoke_003/stage_setups/stage_setups.png",
+        "event_smoke_005/stage_setups/stage_setups.png",
+        "event_smoke_007/stage_setups/stage_setups.png"
+      ],
+      "sha256": "3e48378b4df7cecaf49a3fd5f8f7c83770627bb9b1fff17e244e8c1b4f3ed658"
+    },
+    {
+      "files": [
+        "event_smoke_002/exhibition_booths/exhibition_booths.png",
+        "event_smoke_004/exhibition_booths/exhibition_booths.png",
+        "event_smoke_006/exhibition_booths/exhibition_booths.png",
+        "event_smoke_008/exhibition_booths/exhibition_booths.png"
+      ],
+      "sha256": "b4ebed9f068545143bc87167e9219da10ed890dee32a38378e94f25ed5383a2d"
+    },
+    {
+      "files": [
+        "event_smoke_002/lighting_systems/lighting_systems.png",
+        "event_smoke_004/lighting_systems/lighting_systems.png",
+        "event_smoke_006/lighting_systems/lighting_systems.png",
+        "event_smoke_008/lighting_systems/lighting_systems.png"
+      ],
+      "sha256": "f3d61cc57058245acc905fba17e217dda40a48077712ad4902efc7b420b456a9"
+    },
+    {
+      "files": [
+        "event_smoke_002/registration_counters/registration_counters.png",
+        "event_smoke_004/registration_counters/registration_counters.png",
+        "event_smoke_006/registration_counters/registration_counters.png",
+        "event_smoke_008/registration_counters/registration_counters.png"
+      ],
+      "sha256": "244f1c331e29cdeca3b4926299215c4db881ad8e243f8276f6a974358770663a"
+    }
+  ],
+  "images_per_category": {
+    "backdrops": 4,
+    "ballroom_layouts": 4,
+    "exhibition_booths": 4,
+    "giveaways": 4,
+    "lighting_systems": 4,
+    "podiums": 4,
+    "registration_counters": 4,
+    "stage_setups": 4
+  },
+  "images_per_event": {
+    "event_smoke_001": 4,
+    "event_smoke_002": 4,
+    "event_smoke_003": 4,
+    "event_smoke_004": 4,
+    "event_smoke_005": 4,
+    "event_smoke_006": 4,
+    "event_smoke_007": 4,
+    "event_smoke_008": 4
+  },
+  "near_duplicates": [
+    {
+      "distance": 0,
+      "left": "event_smoke_001/backdrops/backdrops.png",
+      "right": "event_smoke_003/backdrops/backdrops.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/backdrops/backdrops.png",
+      "right": "event_smoke_005/backdrops/backdrops.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/backdrops/backdrops.png",
+      "right": "event_smoke_007/backdrops/backdrops.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/ballroom_layouts/ballroom_layouts.png",
+      "right": "event_smoke_003/ballroom_layouts/ballroom_layouts.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/ballroom_layouts/ballroom_layouts.png",
+      "right": "event_smoke_005/ballroom_layouts/ballroom_layouts.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/ballroom_layouts/ballroom_layouts.png",
+      "right": "event_smoke_007/ballroom_layouts/ballroom_layouts.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/podiums/podiums.png",
+      "right": "event_smoke_003/podiums/podiums.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/podiums/podiums.png",
+      "right": "event_smoke_005/podiums/podiums.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/podiums/podiums.png",
+      "right": "event_smoke_007/podiums/podiums.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/stage_setups/stage_setups.png",
+      "right": "event_smoke_003/stage_setups/stage_setups.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/stage_setups/stage_setups.png",
+      "right": "event_smoke_005/stage_setups/stage_setups.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_001/stage_setups/stage_setups.png",
+      "right": "event_smoke_007/stage_setups/stage_setups.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/exhibition_booths/exhibition_booths.png",
+      "right": "event_smoke_004/exhibition_booths/exhibition_booths.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/exhibition_booths/exhibition_booths.png",
+      "right": "event_smoke_006/exhibition_booths/exhibition_booths.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/exhibition_booths/exhibition_booths.png",
+      "right": "event_smoke_008/exhibition_booths/exhibition_booths.png"
+    },
+    {
+      "distance": 6,
+      "left": "event_smoke_002/giveaways/giveaways.png",
+      "right": "event_smoke_004/giveaways/giveaways.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/lighting_systems/lighting_systems.png",
+      "right": "event_smoke_004/lighting_systems/lighting_systems.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/lighting_systems/lighting_systems.png",
+      "right": "event_smoke_006/lighting_systems/lighting_systems.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/lighting_systems/lighting_systems.png",
+      "right": "event_smoke_008/lighting_systems/lighting_systems.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/registration_counters/registration_counters.png",
+      "right": "event_smoke_004/registration_counters/registration_counters.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/registration_counters/registration_counters.png",
+      "right": "event_smoke_006/registration_counters/registration_counters.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_002/registration_counters/registration_counters.png",
+      "right": "event_smoke_008/registration_counters/registration_counters.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/backdrops/backdrops.png",
+      "right": "event_smoke_005/backdrops/backdrops.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/backdrops/backdrops.png",
+      "right": "event_smoke_007/backdrops/backdrops.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/ballroom_layouts/ballroom_layouts.png",
+      "right": "event_smoke_005/ballroom_layouts/ballroom_layouts.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/ballroom_layouts/ballroom_layouts.png",
+      "right": "event_smoke_007/ballroom_layouts/ballroom_layouts.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/podiums/podiums.png",
+      "right": "event_smoke_005/podiums/podiums.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/podiums/podiums.png",
+      "right": "event_smoke_007/podiums/podiums.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/stage_setups/stage_setups.png",
+      "right": "event_smoke_005/stage_setups/stage_setups.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_003/stage_setups/stage_setups.png",
+      "right": "event_smoke_007/stage_setups/stage_setups.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_004/exhibition_booths/exhibition_booths.png",
+      "right": "event_smoke_006/exhibition_booths/exhibition_booths.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_004/exhibition_booths/exhibition_booths.png",
+      "right": "event_smoke_008/exhibition_booths/exhibition_booths.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_004/lighting_systems/lighting_systems.png",
+      "right": "event_smoke_006/lighting_systems/lighting_systems.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_004/lighting_systems/lighting_systems.png",
+      "right": "event_smoke_008/lighting_systems/lighting_systems.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_004/registration_counters/registration_counters.png",
+      "right": "event_smoke_006/registration_counters/registration_counters.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_004/registration_counters/registration_counters.png",
+      "right": "event_smoke_008/registration_counters/registration_counters.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_005/backdrops/backdrops.png",
+      "right": "event_smoke_007/backdrops/backdrops.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_005/ballroom_layouts/ballroom_layouts.png",
+      "right": "event_smoke_007/ballroom_layouts/ballroom_layouts.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_005/podiums/podiums.png",
+      "right": "event_smoke_007/podiums/podiums.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_005/stage_setups/stage_setups.png",
+      "right": "event_smoke_007/stage_setups/stage_setups.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_006/exhibition_booths/exhibition_booths.png",
+      "right": "event_smoke_008/exhibition_booths/exhibition_booths.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_006/lighting_systems/lighting_systems.png",
+      "right": "event_smoke_008/lighting_systems/lighting_systems.png"
+    },
+    {
+      "distance": 0,
+      "left": "event_smoke_006/registration_counters/registration_counters.png",
+      "right": "event_smoke_008/registration_counters/registration_counters.png"
+    }
+  ],
+  "total_images": 32,
+  "valid_images": 32
+}
